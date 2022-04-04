@@ -290,18 +290,19 @@ uint64_t encode(FILE *ifile, FILE *ofile, struct node *root) {
     }   
 
     // printf("\n");
-    if (sh_off && sh_off < MAX_INT_BUF_BITS) {
-        printf("extra: %u\n", MAX_INT_BUF_BITS - sh_off);
-        // buf[bf_off] = tmp << (MAX_INT_BUF_BITS - sh_off);
-        fputc(tmp << (MAX_INT_BUF_BITS - sh_off), ofile);
-    }
+    // if (sh_off && sh_off < MAX_INT_BUF_BITS) {
+    //     printf("extra: %u\n", MAX_INT_BUF_BITS - sh_off);
+    //     // buf[bf_off] = tmp << (MAX_INT_BUF_BITS - sh_off);
+    //     fputc(tmp << (MAX_INT_BUF_BITS - sh_off), ofile);
+    // }
     return 0;
 }
 
 uint64_t decode(FILE *ifile, FILE *ofile, struct node *root) {
     uint8_t sh_off, chunk, mask;
-    struct node *branch;
     int16_t fch;
+
+    struct node *branch;
 
     assert(root);
     assert(ifile);
@@ -312,7 +313,10 @@ uint64_t decode(FILE *ifile, FILE *ofile, struct node *root) {
     mask = 0x1U << (MAX_INT_BUF_BITS - 1);
 
     fch = fgetc(ifile);
-    chunk = (uint8_t)fch << sh_off;
+    if (fch == EOF)
+        return 1;
+
+    chunk = (uint8_t)fch;
     printf("chunk: 0x%x\n", chunk);
     while (1) {
         chunk = (uint8_t)fch << sh_off;
@@ -337,6 +341,7 @@ uint64_t decode(FILE *ifile, FILE *ofile, struct node *root) {
             fch = fgetc(ifile);
             if (fch == EOF) {
                 printf("fch: EOF: 0x%x\n", fch);
+                printf("fch: EOF: 0x%x\n", (uint8_t)chunk);
                 break;
             }
             chunk = (uint8_t)fch;
@@ -363,6 +368,7 @@ int main(int argc, char *argv[]) {
     uint8_t en;
     struct node *head;
     struct map *fm;
+    struct meta hdrs;
     char *ifpath, *ofpath;
     FILE *ifile, *ofile;
     int16_t arg;
@@ -394,6 +400,7 @@ int main(int argc, char *argv[]) {
     if (!(ofile = fopen(ofpath, "wb")))
         return 1;
 
+    printf("en: %d", en);
     if (en) {
         table = build_hist_tab(ifile);
         msz = hist_tab_size(table);
@@ -402,48 +409,50 @@ int main(int argc, char *argv[]) {
         build_tree(&head);
         rewind(ifile);
 
-    for (i = 0; i < msz; i++) {
-        uint8_t *arr = calloc(tree_height(head), sizeof(uint8_t));
-        if (fm[i].ch == PSEUDO_NULL_BYTE)
-            printf("EOF: %4llu; code: ", fm[i].freq);
-        else if (fm[i].ch == '\n')
-            printf("EOL: %4llu; code: ", fm[i].freq);
-        else
-            printf("'%c': %4llu; code: ", fm[i].ch, fm[i].freq);
-        int64_t hc_off = huffman_code(fm[i].ch, head, arr);
-        assert(hc_off > 0);
+        for (i = 0; i < msz; i++) {
+            uint8_t *arr = calloc(tree_height(head), sizeof(uint8_t));
+            if (fm[i].ch == PSEUDO_NULL_BYTE)
+                printf("EOF: %4llu; code: ", fm[i].freq);
+            else if (fm[i].ch == '\n')
+                printf("EOL: %4llu; code: ", fm[i].freq);
+            else
+                printf("'%c': %4llu; code: ", fm[i].ch, fm[i].freq);
+            int64_t hc_off = huffman_code(fm[i].ch, head, arr);
+            assert(hc_off > 0);
 
-        for (int64_t j = 0; j < hc_off; j++) {
-            printf("%u", arr[j]);
+            for (int64_t j = 0; j < hc_off; j++) {
+                printf("%u", arr[j]);
+            }
+
+            free(arr);
+            printf("\n");
         }
 
-        free(arr);
-        printf("\n");
-    }
+        hdrs = (struct meta){
+            .map_sz = msz,
+            .tree_ht = tree_height(head)
+        };
 
+        fwrite(&hdrs, sizeof(struct meta), 1, ofile);
+        for (i = 0; i < msz; i++)
+            fwrite(&fm[i], sizeof(struct map), 1, ofile);
+        
         encode(ifile, ofile, head);
-
-        fclose(ifile);
-        fclose(ofile);
-
-        FILE *t1file, *t2file;
-
-        if (!(t1file = fopen(ofpath, "rb")))
-            return 1;
-
-        if (!(t2file = fopen("bar", "wb")))
-            return 1;
-
-        decode(t1file, t2file, head);
     } else {
-        // off = decode(enc, off, head, &dec);
+        fread(&hdrs, sizeof(struct meta), 1, ifile);
+        fm = calloc(hdrs.map_sz, sizeof(struct map));
+        printf("headers: {%llu, %llu}\n", hdrs.map_sz, hdrs.tree_ht);
 
-        // for (i = 0; i < off; i++) {
-        //     printf("%c", (char)dec[i]);
-        // }
-        // printf("\n");
+        for (i = 0; i < hdrs.map_sz; i++)
+            fread(&fm[i], sizeof(struct map), 1, ifile);
+
+        head = build_queue(fm, hdrs.map_sz);
+        build_tree(&head);
+        decode(ifile, ofile, head);
     }
 
+    fclose(ifile);
+    fclose(ofile);
 
     return 0;
 }
