@@ -1,9 +1,9 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <time.h>
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
+#include <getopt.h>
 
 #define MAX_HIST_TAB_LEN (0x1U << 8)
 #define MAX_INT_BUF_BITS (0x8U)
@@ -11,13 +11,23 @@
 #define PSEUDO_TREE_BYTE (MAX_HIST_TAB_LEN - 0x1U)
 #define PSEUDO_NULL_BYTE (MAX_HIST_TAB_LEN - 0x2U)
 
+struct meta {
+    uint64_t map_sz;
+    uint64_t tree_ht;
+};
+
+struct map {
+    uint8_t ch;
+    uint64_t freq;
+};
+
 struct node {
     struct node *next;
     struct node *right;
     struct node *left;
-    uint8_t ch;
-    uint64_t freq;
+    struct map data;
 };
+
 
 void qinit(struct node **head) {
     assert(*head);
@@ -34,7 +44,7 @@ void enqueue(struct node **head, struct node *new) {
     prev = NULL;
 
     while (temp) {
-        if (new->freq < temp->freq) 
+        if (new->data.freq < temp->data.freq) 
             break;
 
         prev = temp;
@@ -96,26 +106,59 @@ uint64_t *build_hist_tab(FILE *fp) {
     return table;
 }
 
+uint64_t hist_tab_size(uint64_t *tab) {
+    uint64_t size = 0, i;
 
-struct node *build_queue(uint64_t *table) {
+    assert(tab);
+
+    for (i = 0; i < MAX_HIST_TAB_LEN; i++)
+        if (tab[i])
+            size++;
+
+    return size;
+}
+
+struct map *build_freq_map(uint64_t *tab, uint64_t sz) {
+    uint64_t i, j;
+    struct map *fm;
+
+    assert(tab);
+
+    fm = calloc(sz, sizeof(struct map));
+    assert(fm);
+
+    j = 0;
+    for (i = 0; i < MAX_HIST_TAB_LEN; i++) {
+        if (tab[i]) {
+            fm[j].ch = (uint8_t)i;
+            fm[j].freq = tab[i];
+            j++;
+        }
+    }
+
+    return fm;
+}
+
+struct node *build_queue(struct map *m, uint64_t sz) {
     uint64_t i;
     struct node *head = NULL, *temp;
-    for (i = 0; i < MAX_HIST_TAB_LEN; i++) {
-        if (table[i]) {
-            if (!head) {
-                head = calloc(1, sizeof(struct node));
-                assert(head);
 
-                head->ch = i;
-                head->freq = table[i];
-                qinit(&head);
-            } else {
-                temp = calloc(1, sizeof(struct node));
-                assert(temp);
-                temp->ch = i;
-                temp->freq = table[i];
-                enqueue(&head, temp);
-            }
+    assert(m);
+
+    for (i = 0; i < sz; i++) {
+        if (!head) {
+            head = calloc(1, sizeof(struct node));
+            assert(head);
+
+            head->data.ch = m[i].ch;
+            head->data.freq = m[i].freq;
+            qinit(&head);
+        } else {
+            temp = calloc(1, sizeof(struct node));
+            assert(temp);
+            temp->data.ch = m[i].ch;
+            temp->data.freq = m[i].freq;
+            enqueue(&head, temp);
         }
     }
 
@@ -130,8 +173,8 @@ void build_tree(struct node **head) {
         struct node *right = dequeue(head);
         struct node *new = calloc(1, sizeof(struct node));
 
-        new->ch = PSEUDO_TREE_BYTE;
-        new->freq = left->freq + right->freq;
+        new->data.ch = PSEUDO_TREE_BYTE;
+        new->data.freq = left->data.freq + right->data.freq;
         new->left = left;
         new->right = right;
 
@@ -166,7 +209,7 @@ void traverse_tree(uint8_t ch, struct node *root, int8_t off,
                    uint8_t *arr, int8_t *ret) {
     assert(root);
 
-    if (tree_leaf(root) && root->ch == ch) {
+    if (tree_leaf(root) && root->data.ch == ch) {
         *ret = off;
         return;
     }
@@ -192,22 +235,22 @@ int8_t huffman_code(uint8_t ch, struct node *root, uint8_t *arr) {
     return off;
 }
 
-uint64_t encode(FILE *fp, struct node *root, uint8_t **out) {
-    uint8_t *arr, *buf, sh_off, rch;
+uint64_t encode(FILE *ifile, FILE *ofile, struct node *root) {
+    uint8_t *arr, sh_off, rch;
     uint64_t bf_off;
     int8_t i, hc_off, fch;
 
     assert(root);
-    assert(fp);
+    assert(ifile);
+    assert(ofile);
 
     arr = calloc(tree_height(root), sizeof(uint8_t));
-    buf = calloc(20, sizeof(uint8_t));
 
     sh_off = 0;
     bf_off = 0;
 
     uint8_t tmp = 0;
-    while ((fch = fgetc(fp)) != EOF) {
+    while ((fch = fgetc(ifile)) != EOF) {
         rch = (uint8_t)fch;
         hc_off = huffman_code(rch, root, arr);
         assert(hc_off > 0);
@@ -219,109 +262,91 @@ uint64_t encode(FILE *fp, struct node *root, uint8_t **out) {
         // printf("\n");
 
         for (i = 0; i < hc_off; i++) {
-            printf("%u", arr[i]);
-            // buf[bf_off] = (buf[bf_off] << 1) | arr[i];
+            // printf("%u", arr[i]);
             tmp = (tmp << 1) | arr[i];
             sh_off++;
 
             if (sh_off >= MAX_INT_BUF_BITS) {
-                printf("\n0x%x [%llu]\n", tmp, bf_off);
-                buf[bf_off] = tmp;
-                bf_off++;
-
-                // buf = realloc(buf, bf_off * sizeof(uint8_t));
-                // buf[bf_off] = 0x0U;
+                printf("\n0x%x\n", tmp);
+                fputc(tmp, ofile);
                 tmp = 0;
                 sh_off = 0;
-                // printf(" ");
             }
         }
-        memset(arr, 0, tree_height(root) * sizeof(uint8_t));
     }
 
     hc_off = huffman_code(PSEUDO_NULL_BYTE, root, arr);
-
     for (i = 0; i < hc_off; i++) {
-        printf("%u", arr[i]);
-        // buf[bf_off] = (buf[bf_off] << 1) | arr[i];
+        // printf("%u", arr[i]);
         tmp = (tmp << 1) | arr[i];
         sh_off++;
 
-        // gets skipped
         if (sh_off >= MAX_INT_BUF_BITS) {
-            printf("\n0x%x [%llu]\n", tmp, bf_off);
-            buf[bf_off] = tmp;
-            bf_off++;
-
-            // buf = realloc(buf, bf_off * sizeof(uint8_t));
-            assert(buf);
-            buf[bf_off] = 0x0U;
-            sh_off = 0;
+            // printf("\n0x%x\n", tmp);
+            fputc(tmp, ofile);
             tmp = 0;
-            // printf(" ");
+            sh_off = 0;
         }
     }   
 
-    printf("\n");
+    // printf("\n");
     if (sh_off && sh_off < MAX_INT_BUF_BITS) {
         printf("extra: %u\n", MAX_INT_BUF_BITS - sh_off);
-        buf[bf_off] = tmp << (MAX_INT_BUF_BITS - sh_off);
+        // buf[bf_off] = tmp << (MAX_INT_BUF_BITS - sh_off);
+        fputc(tmp << (MAX_INT_BUF_BITS - sh_off), ofile);
     }
-
-    *out = buf;
-    return sh_off ? bf_off + 1: bf_off;
+    return 0;
 }
 
-uint64_t decode(uint8_t *buf, uint64_t off, struct node *root, uint8_t **out) {
-    assert(root);
-    assert(buf);
-
-    uint8_t *str;
-    volatile uint8_t sh_off, chunk, mask;
-    uint64_t bf_off, st_off;
+uint64_t decode(FILE *ifile, FILE *ofile, struct node *root) {
+    uint8_t sh_off, chunk, mask;
     struct node *branch;
+    int16_t fch;
 
-    str = calloc(64, sizeof(uint8_t));
-    str[0] = 0x0;
+    assert(root);
+    assert(ifile);
+    assert(ofile);
+
     sh_off = 0;
-    bf_off = 0;
-    st_off = 0;
     branch = root;
     mask = 0x1U << (MAX_INT_BUF_BITS - 1);
-    chunk = buf[bf_off];
 
-    printf("0x%x\n", chunk);
-    while (bf_off < off) {
-        chunk = buf[bf_off] << sh_off;
+    fch = fgetc(ifile);
+    chunk = (uint8_t)fch << sh_off;
+    printf("chunk: 0x%x\n", chunk);
+    while (1) {
+        chunk = (uint8_t)fch << sh_off;
         sh_off++;
 
         branch = (chunk & mask) ? branch->right : branch->left;
         printf("%d\n", (chunk & mask) ? 1 : 0);
 
         if (tree_leaf(branch)) {
-            if (branch->ch == PSEUDO_NULL_BYTE) {
+            if (branch->data.ch == PSEUDO_NULL_BYTE) {
                 printf("ch: EOF\n");
-                str[st_off] = '\0';
                 break;
             }
 
-            printf("ch: '%c'\n", branch->ch);
-            str[st_off] = branch->ch;
+            printf("ch: '%c'\n", branch->data.ch);
+            fputc(branch->data.ch, ofile);
 
-            st_off++;
-            // printf("realloc: %s, %llu\n", str, st_off);
-            // str = realloc(str, st_off * sizeof(uint8_t));
-            assert(str);
-
-            str[st_off] = 0x0;
             branch = root;
         }
 
         if (sh_off >= MAX_INT_BUF_BITS) {
-            bf_off++;
-            chunk = buf[bf_off];
+            fch = fgetc(ifile);
+            if (fch == EOF) {
+                printf("fch: EOF: 0x%x\n", fch);
+                break;
+            }
+            chunk = (uint8_t)fch;
             sh_off = 0;
-            printf("0x%x\n", chunk);
+            printf("chunk: 0x%x\n", chunk);
+
+            // if (chunk == PSEUDO_NULL_BYTE) {
+            //     printf("break: 0x%x\n", chunk);
+            //     break;
+            // }
         }
     }
 
@@ -330,59 +355,94 @@ uint64_t decode(uint8_t *buf, uint64_t off, struct node *root, uint8_t **out) {
     //     str[st_off+1] = '\0';
     // }
 
-    *out = str;
-    return st_off;
+    return 0;
 }
 
 int main(int argc, char *argv[]) {
-    uint64_t *table, i, off;
-    uint8_t *enc, *dec;
+    uint64_t *table, msz, i;
+    uint8_t en;
     struct node *head;
-    FILE *in_file;
+    struct map *fm;
+    char *ifpath, *ofpath;
+    FILE *ifile, *ofile;
+    int16_t arg;
 
-    if (argc < 2 || !(in_file = fopen(argv[1], "rb")))
-        return 1;
-
-    table = build_hist_tab(in_file);
-    head = build_queue(table);
-    build_tree(&head);
-    rewind(in_file);
-
-    for (i = 0; i < MAX_HIST_TAB_LEN; i++) {
-        if (table[i]) {
-            uint8_t *arr = calloc(tree_height(head) * 2, sizeof(uint8_t));
-            if (i == PSEUDO_NULL_BYTE)
-                printf("EOF: %4llu; code: ", table[i]);
-            else if (i == '\n')
-                printf("EOL: %4llu; code: ", table[i]);
-            else
-                printf("'%c': %4llu; code: ", (char)i, table[i]);
-            int64_t hc_off = huffman_code((uint8_t)i, head, arr);
-            assert(hc_off >= 0);
-
-            for (int64_t j = 0; j < hc_off; j++) {
-                printf("%u", arr[j]);
-            }
-
-            free(arr);
-            printf("\n");
+    while ((arg = getopt(argc, argv, "edi:o:")) > 0) {
+        switch (arg) {
+        case 'e':
+            en = 1;
+            break;
+        case 'd':
+            en = 0;
+            break;
+        case 'i':
+            ifpath = optarg;
+            break;
+        case 'o':
+            ofpath = optarg;
+            break;
+        case 'h':
+        case '?':
+        default:
+            printf("TBD\n");
         }
     }
 
-    off = encode(in_file, head, &enc);
-    fclose(in_file);
+    if (!(ifile = fopen(ifpath, "rb")))
+        return 1;
 
-    for (i = 0; i < off; i++) {
-        printf("0x%x ", enc[i]);
+    if (!(ofile = fopen(ofpath, "wb")))
+        return 1;
+
+    if (en) {
+        table = build_hist_tab(ifile);
+        msz = hist_tab_size(table);
+        fm = build_freq_map(table, msz);
+        head = build_queue(fm, msz);
+        build_tree(&head);
+        rewind(ifile);
+
+    for (i = 0; i < msz; i++) {
+        uint8_t *arr = calloc(tree_height(head), sizeof(uint8_t));
+        if (fm[i].ch == PSEUDO_NULL_BYTE)
+            printf("EOF: %4llu; code: ", fm[i].freq);
+        else if (fm[i].ch == '\n')
+            printf("EOL: %4llu; code: ", fm[i].freq);
+        else
+            printf("'%c': %4llu; code: ", fm[i].ch, fm[i].freq);
+        int64_t hc_off = huffman_code(fm[i].ch, head, arr);
+        assert(hc_off > 0);
+
+        for (int64_t j = 0; j < hc_off; j++) {
+            printf("%u", arr[j]);
+        }
+
+        free(arr);
+        printf("\n");
     }
-    printf("\n");
 
-    off = decode(enc, off, head, &dec);
+        encode(ifile, ofile, head);
 
-    for (i = 0; i < off; i++) {
-        printf("%c", (char)dec[i]);
+        fclose(ifile);
+        fclose(ofile);
+
+        FILE *t1file, *t2file;
+
+        if (!(t1file = fopen(ofpath, "rb")))
+            return 1;
+
+        if (!(t2file = fopen("bar", "wb")))
+            return 1;
+
+        decode(t1file, t2file, head);
+    } else {
+        // off = decode(enc, off, head, &dec);
+
+        // for (i = 0; i < off; i++) {
+        //     printf("%c", (char)dec[i]);
+        // }
+        // printf("\n");
     }
-    printf("\n");
 
 
     return 0;
