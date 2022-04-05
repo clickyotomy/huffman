@@ -20,7 +20,8 @@ uint8_t tree_leaf(struct node *node) {
     return (!node->left && !node->right);
 }
 
-/* Return the traversal path for a given character.
+/*
+ * Return the traversal path for a given character.
  *
  * In Huffman encoding, a "0" means a left, and a "1" means a
  * right. Starting at the root, find the path (in terms of "0"s
@@ -47,7 +48,8 @@ void traverse_tree(uint8_t ch, struct node *root, int8_t off, uint8_t *arr,
     }
 }
 
-/* Build a Huffmann encoding tree from a priority queue.
+/*
+ * Build a Huffmann encoding tree from a priority queue.
  *
  * The tree is constructed by repeatedly dequeueing elements from
  * the queue (dequeueing is done from the head of the queue, and the
@@ -67,6 +69,7 @@ void make_tree(struct node **head) {
         up = calloc(1, sizeof(struct node));
 
         up->data.ch = PSEUDO_TREE_BYTE;
+        up->data.ch = 0;
         up->data.freq = (lt->data.freq + rt->data.freq);
         up->left = lt;
         up->right = rt;
