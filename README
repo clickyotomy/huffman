@@ -1,0 +1,26 @@
+huffman
+-------
+A simple text-based Huffman encoder and decoder.
+
+
+USAGE
+	huffman (-e | -d) -i INPUT -o OUTPUT [-h]
+
+ARGUMENTS
+	  -e  encode (default operation)
+	  -d  decode
+	  -i  input file path
+	  -o  output file path
+	  -h  display program usage
+
+BUILD
+	To build the binary ("huffman"), run:
+		
+		$ make
+
+TEST
+	To test the program with a sample input [1], run:
+
+		$ make test
+
+[1]: https://ocw.mit.edu/ans7870/6/6.006/s08/lecturenotes/files/t8.shakespeare.txt
