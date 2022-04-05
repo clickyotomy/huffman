@@ -1,5 +1,5 @@
 /*
- * A simple text-based Huffman {enc,dec}order.
+ * huffman: A simple text-based Huffman {enc,dec}order.
  */
 
 #ifndef __HUFFMAN_H__
@@ -70,7 +70,7 @@ int8_t huffman_code(uint8_t, struct node *, uint8_t *);
 uint64_t encode(FILE *, struct node *, FILE *);
 uint64_t decode(FILE *, struct node *, FILE *);
 
-/* Helpers. */
+/* Helper routines. */
 void prog_usage(const char *);
 void err_exit(const char *);
 
