@@ -31,6 +31,12 @@
  */
 #define PSEUDO_NULL_BYTE (MAX_HIST_TAB_LEN - 0x2U)
 
+/* Stores the metadata for the encoded file/ */
+struct meta {
+    uint32_t map_sz;   /* Size of the map. */
+    uint64_t nr_bytes; /* Number of encoded bytes (excluding headers). */
+};
+
 /* Maps a character to its frequency in the data. */
 struct map {
     uint8_t ch;
@@ -68,7 +74,7 @@ struct map *make_map(FILE *, uint32_t *);
 /* Routines for encoding and decoding. */
 int8_t huffman_code(uint8_t, struct node *, uint8_t *);
 uint64_t encode(FILE *, struct node *, FILE *);
-uint64_t decode(FILE *, struct node *, FILE *);
+uint64_t decode(FILE *, uint64_t, struct node *, FILE *);
 
 /* Helper routines. */
 void prog_usage(const char *);
