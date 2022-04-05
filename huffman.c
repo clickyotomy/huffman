@@ -213,7 +213,7 @@ int main(int argc, char *argv[]) {
     uint64_t nr_bytes;
     struct node *head = NULL;
     struct map *fmap = NULL;
-    struct meta fmeta = {0};
+    struct meta fmeta = {.map_sz = 0, .nr_bytes = 0};
     FILE *ifile, *ofile;
     char *ifpath, *ofpath;
     int16_t arg, enc = 1;
