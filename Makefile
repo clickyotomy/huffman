@@ -1,31 +1,45 @@
-SHELL     = /bin/bash
-PROG_NAME = huffman
-CC        = clang
-CFLAGS    = -Wall -Werror -Wextra -pedantic -std=c11
-OBJS      = $(PROG_NAME).o tree.o map.o queue.o
-FMT       = clang-format -style='{IndentWidth: 4,TabWidth: 4}' -i
+SHELL       = /bin/bash
+PROG_NAME   = huffman
+CC          = clang
+CFLAGS      = -Wall -Werror -Wextra -pedantic -std=c11 -ggdb -O3
+OBJS        = $(PROG_NAME).o tree.o map.o queue.o
+FMT         = clang-format -style='{IndentWidth: 4,TabWidth: 4}' -i
+VALGRIND    = valgrind --leak-check=full --show-leak-kinds=all
+PERF_EVENTS = 'cache-references,cache-misses,cycles,instructions,branches,faults,migrations'
+PERF_ARGS   = -B -e $(PERF_EVENTS)
+PERF_STAT   = perf stat $(PERF_ARGS)
 
 default: $(PROG_NAME)
 
 $(PROG_NAME): $(OBJS)
-	@$(CC) $(CFLAGS) -o $@ $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
 %.o: %.c
-	@$(CC) $< $(CFLAGS) -c -o $@
+	$(CC) $< $(CFLAGS) -c -o $@
 
 format:
-	@$(FMT) *.c *.h
+	$(FMT) *.c *.h
 
 test: default
 	/usr/bin/time ./$(PROG_NAME) -e -i test/shakespeare.txt -o shakespeare.enc
 	/usr/bin/time ./$(PROG_NAME) -d -i shakespeare.enc -o shakespeare.dec
-
 	diff shakespeare.dec test/shakespeare.txt
 	wc -c shakespeare.enc
 	wc -c shakespeare.dec
 
-clean:
-	@/bin/rm -rf *~ *.o $(PROG_NAME) *.enc *.dec test.txt
+mem-chk: default
+	head -4096 test/shakespeare.txt >tmp.txt
+	$(VALGRIND) -- ./$(PROG_NAME) -e -i tmp.txt -o tmp.enc
+	$(VALGRIND) -- ./$(PROG_NAME) -d -i tmp.enc -o tmp.dec
+	diff tmp.txt tmp.dec
+	/bin/rm tmp.txt
 
-.PHONY: default format test clean
+test-perf: default
+	$(PERF_STAT) -- ./$(PROG_NAME) -e -i test/shakespeare.txt -o shakespeare.enc
+	$(PERF_STAT) -- ./$(PROG_NAME) -d -i shakespeare.enc -o shakespeare.dec
+
+clean:
+	/bin/rm -rf *~ *.o $(PROG_NAME) *.enc *.dec
+
+.PHONY: default format test mem-chk test-perf clean
 
