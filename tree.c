@@ -66,7 +66,7 @@ void make_tree(struct node **head) {
     while (queue_size(*head) > 1) {
         lt = dequeue(head);
         rt = dequeue(head);
-        up = calloc(1, sizeof(struct node));
+        up = (struct node *) calloc(1, sizeof(struct node));
 
         up->data.ch = PSEUDO_TREE_BYTE;
         up->data.ch = 0;

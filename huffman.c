@@ -41,7 +41,8 @@ int8_t huffman_code(uint8_t ch, struct node *root, uint8_t *arr) {
  * The byte is then written to the output file.
  */
 uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
-    uint8_t *arr, shift, chunk, code;
+    uint8_t *arr, shift, chunk;
+    uint8_t code = 0;
     uint32_t th;
     uint64_t nr_bytes = 0;
     int8_t i, off;
@@ -55,7 +56,7 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
     assert(th > 0);
 
     /* Temporary array to store the Huffman code. */
-    arr = calloc(th, sizeof(uint8_t));
+    arr = (uint8_t *) calloc(th, sizeof(uint8_t));
     shift = 0;
 
     while ((file_ch = fgetc(ifile)) != EOF) {
@@ -213,7 +214,7 @@ int main(int argc, char *argv[]) {
     uint64_t nr_bytes;
     struct node *head = NULL;
     struct map *fmap = NULL;
-    struct meta fmeta = {.map_sz = 0, .nr_bytes = 0};
+    struct meta fmeta = {0, 0};
     FILE *ifile, *ofile;
     char *ifpath, *ofpath;
     int16_t arg, enc = 1;
@@ -297,7 +298,7 @@ int main(int argc, char *argv[]) {
         fread(&fmeta, sizeof(struct meta), 1, ifile);
         assert(fmeta.map_sz > 0 && fmeta.nr_bytes > 0);
 
-        fmap = calloc(fmeta.map_sz, sizeof(struct map));
+        fmap = (map *) calloc(fmeta.map_sz, sizeof(struct map));
         for (i = 0; i < fmeta.map_sz; i++)
             fread(&fmap[i], sizeof(struct map), 1, ifile);
 

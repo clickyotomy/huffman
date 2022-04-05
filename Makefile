@@ -1,7 +1,7 @@
 SHELL       = /bin/bash
 PROG_NAME   = huffman
-CC          = clang
-CFLAGS      = -Wall -Werror -Wextra -pedantic -std=c11 -ggdb -O3
+CC          = g++
+CFLAGS      = -std=c++17 -Wall -Wextra -pedantic -ggdb -O3
 OBJS        = $(PROG_NAME).o tree.o map.o queue.o
 FMT         = clang-format -style='{IndentWidth: 4,TabWidth: 4}' -i
 VALGRIND    = valgrind --leak-check=full --show-leak-kinds=all

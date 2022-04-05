@@ -23,9 +23,9 @@ uint32_t queue_size(struct node *head) {
  * when adding a node into the queue. The priority
  * is in the order of increasing frequencies.
  */
-void enqueue(struct node **head, struct node *new) {
+void enqueue(struct node **head, struct node *new_node) {
     assert(*head);
-    assert(new);
+    assert(new_node);
 
     struct node *temp, *prev;
 
@@ -33,7 +33,7 @@ void enqueue(struct node **head, struct node *new) {
     prev = NULL;
 
     while (temp) {
-        if (new->data.freq < temp->data.freq)
+        if (new_node->data.freq < temp->data.freq)
             break;
 
         prev = temp;
@@ -41,13 +41,13 @@ void enqueue(struct node **head, struct node *new) {
     }
 
     if (!prev) {
-        new->next = *head;
-        *head = new;
+        new_node->next = *head;
+        *head = new_node;
         return;
     }
 
-    new->next = prev->next;
-    prev->next = new;
+    new_node->next = prev->next;
+    prev->next = new_node;
 }
 
 /*
@@ -88,13 +88,13 @@ struct node *make_queue(struct map *fmap, uint32_t size) {
 
     for (i = 0; i < size; i++) {
         if (!head) {
-            head = calloc(1, sizeof(struct node));
+            head = (struct node *) calloc(1, sizeof(struct node));
             assert(head);
 
             memcpy(&head->data, &fmap[i], sizeof(struct map));
             init_queue(&head);
         } else {
-            temp = calloc(1, sizeof(struct node));
+            temp = (struct node *) calloc(1, sizeof(struct node));
             assert(temp);
 
             memcpy(&temp->data, &fmap[i], sizeof(struct map));
