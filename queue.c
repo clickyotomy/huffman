@@ -91,17 +91,11 @@ struct node *make_queue(struct map *fmap, uint32_t size) {
             head = calloc(1, sizeof(struct node));
             assert(head);
 
-            // head->data.ch = fmap[i].ch;
-            // head->data.freq = fmap[i].freq;
-
             memcpy(&head->data, &fmap[i], sizeof(struct map));
             init_queue(&head);
         } else {
             temp = calloc(1, sizeof(struct node));
             assert(temp);
-
-            // temp->data.ch = fmap[i].ch;
-            // temp->data.freq = fmap[i].freq;
 
             memcpy(&temp->data, &fmap[i], sizeof(struct map));
             enqueue(&head, temp);
