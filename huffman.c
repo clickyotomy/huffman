@@ -286,9 +286,7 @@ int main(int argc, char *argv[]) {
         decode(ifile, head, ofile);
     }
 
-    /* The queue can be free-d instead too. */
-    nuke_tree(head);
-
+    nuke_tree(&head);
     free(fmap);
     fclose(ifile);
     fclose(ofile);

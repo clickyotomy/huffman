@@ -81,12 +81,17 @@ void make_tree(struct node **head) {
 }
 
 /* Free all the nodes in the tree. */
-void nuke_tree(struct node *root) {
-    if (!root)
+void nuke_tree(struct node **root) {
+    struct node *n;
+
+    assert(root);
+
+    n = *root;
+    if (!n)
         return;
 
-    nuke_tree(root->left);
-    nuke_tree(root->right);
+    nuke_tree(&n->left);
+    nuke_tree(&n->right);
 
-    free(root);
+    free(n);
 }

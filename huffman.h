@@ -50,7 +50,7 @@ uint32_t tree_height(struct node *root);
 uint8_t tree_leaf(struct node *node);
 void traverse_tree(uint8_t, struct node *, int8_t, uint8_t *, int8_t *);
 void make_tree(struct node **);
-void nuke_tree(struct node *);
+void nuke_tree(struct node **);
 
 /* Routines for queues. */
 uint32_t queue_size(struct node *);
