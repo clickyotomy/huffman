@@ -8,9 +8,12 @@ VALGRIND    = valgrind --leak-check=full --show-leak-kinds=all
 PERF_EVENTS = 'cache-references,cache-misses,cycles,instructions,branches,faults,migrations'
 PERF_ARGS   = -B -e $(PERF_EVENTS)
 PERF_STAT   = perf stat $(PERF_ARGS)
-RAND_MIN    ?= 1024       # 1 kB.
-RAND_MAX    ?= 4294967296 # 4 * 1024 * 1024 * 1024 bytes (~4GB).
-RAND_AWK    = BEGIN{ srand(); print int(rand()*($(RAND_MAX)-$(RAND_MIN))+$(RAND_MIN)) }
+RAND_QMIN   = 1	  # 1 byte.
+RAND_QMAX   = 128 # 128 bytes.
+RAND_QAWK   = BEGIN{ srand(); print int(rand()*($(RAND_QMAX)-$(RAND_QMIN))+$(RAND_QMIN)) }
+RAND_FMIN   ?= 1024       # 1 kB.
+RAND_FMAX   ?= 4294967296 # 4 * 1024 * 1024 * 1024 bytes (~4GB).
+RAND_FAWK   = BEGIN{ srand(); print int(rand()*($(RAND_FMAX)-$(RAND_FMIN))+$(RAND_FMIN)) }
 
 default: $(PROG_NAME)
 
@@ -36,29 +39,47 @@ test: default
 	wc -c shakespeare.enc
 	wc -c shakespeare.dec
 
+
+test-qrand: default
+	$(eval RAND_INT=$(shell awk '$(RAND_QAWK)'))
+	base64 /dev/urandom | head -c $(RAND_INT) >rand.txt
+
+	./$(PROG_NAME) -e -i rand.txt -o rand.enc
+	./$(PROG_NAME) -d -i rand.enc -o rand.dec
+
+	diff rand.dec rand.txt
+
+
+test-frand: default
+	$(eval RAND_INT=$(shell awk '$(RAND_FAWK)'))
+	base64 /dev/urandom | head -c $(RAND_INT) >rand.txt
+
+	/usr/bin/time ./$(PROG_NAME) -e -i rand.txt -o rand.enc
+	/usr/bin/time ./$(PROG_NAME) -d -i rand.enc -o rand.dec
+
+	diff rand.dec rand.txt
+
+	wc -c rand.enc
+	wc -c rand.dec
+
+
 test-perf: default
 	$(PERF_STAT) -- ./$(PROG_NAME) -e -i test/shakespeare.txt -o shakespeare.enc
 	$(PERF_STAT) -- ./$(PROG_NAME) -d -i shakespeare.enc -o shakespeare.dec
 
 
-test-rand: default
-	$(eval RAND_INT=$(shell awk '$(RAND_AWK)'))
-	base64 /dev/urandom | head -c $(RAND_INT) >rand.txt
-	/usr/bin/time ./$(PROG_NAME) -e -i rand.txt -o rand.enc
-	/usr/bin/time ./$(PROG_NAME) -d -i rand.enc -o rand.dec
-	diff rand.txt rand.dec
-	wc -c rand.enc
-	wc -c rand.dec
-
 mem-chk: default
-	base64 /dev/urandom | head -c $(RAND_MIN) >rand.txt
+	base64 /dev/urandom | head -c $(RAND_FMIN) >rand.txt
+
 	$(VALGRIND) -- ./$(PROG_NAME) -e -i rand.txt -o rand.enc
 	$(VALGRIND) -- ./$(PROG_NAME) -d -i rand.enc -o rand.dec
-	diff rand.txt rand.dec
+
+	diff rand.dec rand.txt
+
 
 clean:
 	/bin/rm -rf *~ *.o $(PROG_NAME) *.enc *.dec rand.*
 
 
-.PHONY: default format test test-perf test-rand mem-chk clean
+.PHONY: default format test test-qrand test-frand test-perf mem-chk clean
 
