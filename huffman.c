@@ -103,6 +103,18 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
         }
     }
 
+    /*
+     * If we previously ended with a bit offset that did not fully occupy
+     * a byte, that byte must also be written to the file. We also shift
+     * the remaining bits to the left for the same reason. Otherwise, this
+     * byte would have stray "0"s from the most-significant-bit and will
+     * result in a wrongly decoded value.
+     */
+    if (shift && shift < MAX_INT_BUF_BITS) {
+        code = code << (MAX_INT_BUF_BITS - shift);
+        fputc(code, ofile);
+    }
+
     free(arr);
 
     return nr_bytes;
@@ -146,7 +158,6 @@ uint64_t decode(FILE *ifile, struct node *root, FILE *ofile) {
     if (file_ch == EOF)
         return 1;
 
-    // chunk = (uint8_t)file_ch;
     while (1) {
         chunk = (uint8_t)file_ch << shift;
         shift++;
@@ -181,8 +192,6 @@ uint64_t decode(FILE *ifile, struct node *root, FILE *ofile) {
             /* If there are no more bytes to read. */
             if (file_ch == EOF)
                 break;
-
-            // chunk = (uint8_t)file_ch;
 
             /* Reset the shift counter. */
             shift = 0;
