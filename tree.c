@@ -106,7 +106,7 @@ static inline int16_t tree_buff_off_incr(uint8_t *sh) {
 }
 
 /*
- * Compress the Huffman tree into a byte buffer.
+ * Deflate a Huffman tree into a buffer.
  *
  * The tree is encoded as follows:
  *
@@ -178,7 +178,8 @@ uint8_t *encode_tree(struct node *root, uint16_t *eoff, uint8_t *esh) {
     return buf;
 }
 
-/* Read the deflated tree buffer to construct the tree.
+/*
+ * Inflate the tree buffer into a Huffman tree.
  *
  * The most significant bit is checked to see if it is a leaf node. If that
  * is the case, then the next "MAX_INT_BUF_BITS" are read to get the byte
