@@ -50,8 +50,7 @@ uint32_t *make_table(FILE *fp) {
  * of the map is retuned via "ret".
  */
 struct map *make_map(FILE *fp, uint32_t *ret) {
-    uint32_t map_sz, i, j;
-    uint32_t *tab = NULL;
+    uint32_t *tab = NULL, map_sz, i, j;
     struct map *fmap = NULL;
 
     tab = make_table(fp);

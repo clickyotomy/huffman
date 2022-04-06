@@ -31,10 +31,12 @@
  */
 #define PSEUDO_NULL_BYTE (MAX_HIST_TAB_LEN - 0x2U)
 
-/* Stores the metadata for the encoded file/ */
+/* Stores the metadata for the encoded file. */
 struct meta {
-    uint32_t map_sz;   /* Size of the map. */
-    uint64_t nr_bytes; /* Number of encoded bytes (excluding headers). */
+    uint8_t tree_lb_sh_pos; /* Bit shift position of the last tree byte. */
+    uint16_t nr_tree_bytes; /* Number of bytes in the encoded tree buffer. */
+    uint64_t nr_src_bytes;  /* Number of bytes in the original file. */
+    uint64_t nr_enc_bytes;  /* Number of encoded bytes (excluding headers). */
 };
 
 /* Maps a character to its frequency in the data. */
@@ -57,6 +59,8 @@ uint8_t tree_leaf(struct node *node);
 void traverse_tree(uint8_t, struct node *, int8_t, uint8_t *, int8_t *);
 void make_tree(struct node **);
 void nuke_tree(struct node **);
+uint8_t *encode_tree(struct node *, uint16_t *, uint8_t *);
+struct node *decode_tree(uint8_t *, uint16_t, uint8_t);
 
 /* Routines for queues. */
 uint32_t queue_size(struct node *);
@@ -73,8 +77,8 @@ struct map *make_map(FILE *, uint32_t *);
 
 /* Routines for encoding and decoding. */
 int8_t huffman_code(uint8_t, struct node *, uint8_t *);
-uint64_t encode(FILE *, struct node *, FILE *);
-uint64_t decode(FILE *, uint64_t, struct node *, FILE *);
+void encode(FILE *, struct node *, FILE *, uint64_t *, uint64_t *);
+void decode(FILE *, uint64_t, struct node *, FILE *, uint64_t *, uint64_t *);
 
 /* Helper routines. */
 void prog_usage(const char *);

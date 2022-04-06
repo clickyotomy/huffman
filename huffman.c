@@ -33,30 +33,31 @@ int8_t huffman_code(uint8_t ch, struct node *root, uint8_t *arr) {
 
 /*
  * Encode all the bytes input file, and write it to the
- * output file. The return value is the number of bytes
- * written to the output file.
+ * output file.
  *
  * The Huffman code for each byte is computed and the bits
  * are packed together until the size of a byte is reached.
  * The byte is then written to the output file.
  */
-uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
-    uint8_t *arr, shift, chunk, code;
+void encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *nr_rd_bytes,
+            uint64_t *nr_wr_bytes) {
+    uint8_t shift = 0, *arr, chunk, code;
     uint32_t th;
-    uint64_t nr_bytes = 0;
+    uint64_t nr_rbytes = 0, nr_wbytes = 0;
     int8_t i, off;
     int16_t file_ch;
 
     assert(root);
     assert(ifile);
     assert(ofile);
+    assert(nr_rd_bytes);
+    assert(nr_wr_bytes);
 
     th = tree_height(root);
     assert(th > 0);
 
     /* Temporary array to store the Huffman code. */
     arr = calloc(th, sizeof(uint8_t));
-    shift = 0;
 
     while ((file_ch = fgetc(ifile)) != EOF) {
         /* Read a byte from the file. */
@@ -77,13 +78,15 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
             /* If we have a fully encoded byte, write it ot the file. */
             if (shift >= MAX_INT_BUF_BITS) {
                 fputc(code, ofile);
-                nr_bytes++;
+                nr_wbytes++;
 
                 /* Reset the temporary bit buffer and shift count. */
                 code = 0;
                 shift = 0;
             }
         }
+
+        nr_rbytes++;
     }
 
     /*
@@ -97,7 +100,7 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
 
         if (shift >= MAX_INT_BUF_BITS) {
             fputc(code, ofile);
-            nr_bytes++;
+            nr_wbytes++;
 
             code = 0;
             shift = 0;
@@ -114,12 +117,13 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
     if (shift && shift < MAX_INT_BUF_BITS) {
         code <<= (MAX_INT_BUF_BITS - shift);
         fputc(code, ofile);
-        nr_bytes++;
+        nr_wbytes++;
     }
 
-    free(arr);
+    *nr_rd_bytes = nr_rbytes;
+    *nr_wr_bytes = nr_wbytes;
 
-    return nr_bytes;
+    free(arr);
 }
 
 /*
@@ -133,22 +137,23 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
  *
  * Decoding is done by extracting bits from each byte read from
  * the file. After reaching a leaf node by walking the Huffman
- * tree (depending on the "0" -- left -- or "1" -- right--) from
+ * tree (depending on the "0" -- left -- or "1" -- right --) from
  * the bits. The resultant byte obtained from the tree traversal
  * is written to the output file.
  */
-uint64_t decode(FILE *ifile, uint64_t rd_bytes, struct node *root,
-                FILE *ofile) {
-    uint64_t nr_dec_bytes = 0, nr_rd_bytes = 0;
-    uint8_t shift, chunk, mask;
+void decode(FILE *ifile, uint64_t nr_en_bytes, struct node *root, FILE *ofile,
+            uint64_t *nr_rd_bytes, uint64_t *nr_wr_bytes) {
+    uint8_t shift = 0, chunk, mask;
+    uint64_t nr_rbytes = 0, nr_wbytes = 0;
     int16_t file_ch;
     struct node *branch;
 
     assert(root);
     assert(ifile);
     assert(ofile);
+    assert(nr_rd_bytes);
+    assert(nr_wr_bytes);
 
-    shift = 0;
     branch = root;
 
     /*
@@ -158,10 +163,10 @@ uint64_t decode(FILE *ifile, uint64_t rd_bytes, struct node *root,
     mask = 0x1U << (MAX_INT_BUF_BITS - 1);
 
     file_ch = fgetc(ifile);
-    nr_rd_bytes++;
+    nr_rbytes++;
 
     if (file_ch == EOF)
-        return nr_dec_bytes;
+        goto ret;
 
     while (1) {
         chunk = (uint8_t)file_ch << shift;
@@ -176,11 +181,11 @@ uint64_t decode(FILE *ifile, uint64_t rd_bytes, struct node *root,
          */
         if (tree_leaf(branch)) {
             /* This marks the end of the decoded file. */
-            if (branch->data.ch == PSEUDO_NULL_BYTE && nr_rd_bytes >= rd_bytes)
+            if (branch->data.ch == PSEUDO_NULL_BYTE && nr_rbytes >= nr_en_bytes)
                 break;
 
             fputc(branch->data.ch, ofile);
-            nr_dec_bytes++;
+            nr_wbytes++;
 
             /* Reset the branch to the root for the next byte. */
             branch = root;
@@ -193,7 +198,7 @@ uint64_t decode(FILE *ifile, uint64_t rd_bytes, struct node *root,
          */
         if (shift >= MAX_INT_BUF_BITS) {
             file_ch = fgetc(ifile);
-            nr_rd_bytes++;
+            nr_rbytes++;
 
             /* If there are no more bytes to read. */
             if (file_ch == EOF)
@@ -204,19 +209,24 @@ uint64_t decode(FILE *ifile, uint64_t rd_bytes, struct node *root,
         }
     }
 
-    return nr_dec_bytes;
+ret:
+    *nr_rd_bytes = nr_rbytes;
+    *nr_wr_bytes = nr_wbytes;
 }
 
 /* All the things happen here. */
 int main(int argc, char *argv[]) {
-    uint32_t /*map_sz,*/ i;
-    uint64_t nr_bytes;
+    uint8_t *tbuf = NULL;
+    uint16_t i;
+    uint32_t map_sz;
+    uint64_t nr_rbytes, nr_wbytes;
+    int16_t arg, enc = 1;
+    char *ifpath, *ofpath;
+    FILE *ifile, *ofile;
+
     struct node *head = NULL;
     struct map *fmap = NULL;
-    struct meta fmeta = {.map_sz = 0, .nr_bytes = 0};
-    FILE *ifile, *ofile;
-    char *ifpath, *ofpath;
-    int16_t arg, enc = 1;
+    struct meta fmeta;
 
     while ((arg = getopt(argc, argv, "edi:o:h?")) > 0) {
         switch (arg) {
@@ -249,12 +259,11 @@ int main(int argc, char *argv[]) {
     /* Encoding. */
     if (enc) {
         /* Construct the map. */
-        fmap = make_map(ifile, &fmeta.map_sz);
+        fmap = make_map(ifile, &map_sz);
         assert(fmap);
-        assert(fmeta.map_sz > 0);
 
         /* Build the priority queue. */
-        head = make_queue(fmap, fmeta.map_sz);
+        head = make_queue(fmap, map_sz);
         assert(head);
 
         /* Make the queue into a tree. */
@@ -277,39 +286,56 @@ int main(int argc, char *argv[]) {
 
         /* Write headers to the encoded output file. */
         fwrite(&fmeta, sizeof(struct meta), 1, ofile);
-        for (i = 0; i < fmeta.map_sz; i++)
-            fwrite(&fmap[i], sizeof(struct map), 1, ofile);
+
+        /* Deflate the tree into a buffer, and write it to the file. */
+        tbuf = encode_tree(head, &fmeta.nr_tree_bytes, &fmeta.tree_lb_sh_pos);
+        assert(tbuf);
+
+        printf("tb: %u\n", fmeta.nr_tree_bytes);
+        fwrite(tbuf, sizeof(uint8_t), fmeta.nr_tree_bytes, ofile);
 
         /* Write the encoded bytes to the file. */
-        nr_bytes = encode(ifile, head, ofile);
+        encode(ifile, head, ofile, &fmeta.nr_src_bytes, &fmeta.nr_enc_bytes);
 
         /*
-         * Rewind back to write the number of encoded
-         * bytes to the output file header.
+         * Rewind back to write the number of bytes in the source, and
+         * the number encoded bytes to the output file header.
          */
         rewind(ofile);
-        fmeta.nr_bytes = nr_bytes;
         fwrite(&fmeta, sizeof(struct meta), 1, ofile);
     } else {
         /* Decoding. */
 
         /* Read the file headers. */
         fread(&fmeta, sizeof(struct meta), 1, ifile);
-        assert(fmeta.map_sz > 0 && fmeta.nr_bytes > 0);
+        printf("tb: %u, sh: %u\n", fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
+        assert(fmeta.nr_tree_bytes);
+        assert(fmeta.nr_src_bytes);
+        assert(fmeta.nr_enc_bytes);
 
-        fmap = calloc(fmeta.map_sz, sizeof(struct map));
-        for (i = 0; i < fmeta.map_sz; i++)
-            fread(&fmap[i], sizeof(struct map), 1, ifile);
+        /* Read the tree from file into a temporary buffer and inflate it. */
+        tbuf = calloc(fmeta.nr_tree_bytes, sizeof(uint8_t));
+        assert(tbuf);
+        fread(tbuf, sizeof(uint8_t), fmeta.nr_tree_bytes, ifile);
 
-        /* Build the queue, and the tree from the headers. */
-        head = make_queue(fmap, fmeta.map_sz);
-        make_tree(&head);
+        printf("tree_buf: ");
+        for (i = 0; i < fmeta.nr_tree_bytes; i++) {
+            printf("0x%hhx ", tbuf[i]);
+        }
+        printf("\n");
+
+        head = decode_tree(tbuf, fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
 
         /* Decode the file and write to the output file. */
-        nr_bytes = decode(ifile, fmeta.nr_bytes, head, ofile);
+        decode(ifile, fmeta.nr_enc_bytes, head, ofile, &nr_rbytes, &nr_wbytes);
+
+        /* Check if the decode was successful. */
+        assert(fmeta.nr_enc_bytes == nr_rbytes);
+        assert(fmeta.nr_src_bytes == nr_wbytes);
     }
 
     nuke_tree(&head);
+    free(tbuf);
     free(fmap);
     fclose(ifile);
     fclose(ofile);
