@@ -99,23 +99,42 @@ void nuke_tree(struct node **root) {
     free(n);
 }
 
+/* Track the byte offset and shifts for the tree buffer. */
 static inline int16_t tree_buff_off_incr(uint8_t *sh) {
     assert(sh);
     return (*sh < MAX_INT_BUF_BITS - 0x1U) ? !(++(*sh)) : !(*sh = 0);
 }
 
+/*
+ * Compress the Huffman tree into a byte buffer.
+ *
+ * The tree is encoded as follows:
+ *
+ *  +---+---------------+---+---+---+-------------+-- >  < --+
+ *  | L | B [0, ..., 8] | L | L | L | [0, ..., 8] |   >  <   |
+ *  +---+---------------+---+---+---+-------------+-- >  < --+
+ *
+ *  - L     A bit indicating whether a node is a leaf. If the node is a
+ *          leaf, then it is followed by a sequence of "MAX_INT_BUF_BITS"
+ *          representing the byte value at that leaf node. Otherwise, it
+ *          is followed by a subsequent bit indicating the status of the
+ *          next node.
+ *  - B[]   The byte value of a leaf node.
+ *
+ * The encoded buffer along with the byte and shift offsets are set to
+ * pointers in "buf", "off" and "sh" respectively.
+ *
+ */
 static void deflate_tree(struct node *root, uint8_t *buf, uint16_t *off,
                          uint8_t *sh) {
     uint8_t i, ch, mask, bit;
-    uint16_t j;
+
     assert(root);
     assert(buf);
 
     mask = 0x1U << (MAX_INT_BUF_BITS - 1);
 
     if (tree_leaf(root)) {
-        printf("off: %u, sh: %u, write: 1[%c]: ", *off, *sh,
-               (char)root->data.ch);
         buf[*off] <<= 1;
         buf[*off] = buf[*off] | 0x1;
         *off += tree_buff_off_incr(sh);
@@ -127,61 +146,50 @@ static void deflate_tree(struct node *root, uint8_t *buf, uint16_t *off,
             buf[*off] <<= 1;
             buf[*off] = buf[*off] | bit;
             *off += tree_buff_off_incr(sh);
-            printf("%d: [%d:0x%x] ", ((ch << i) & mask) > 0, *off, buf[*off]);
         }
-        printf(" ... ");
-        for (j = 0; j < *off; j++)
-            printf("0x%x ", buf[j]);
-        printf("\n");
-    } else {
-        printf("off: %u, sh: %u, write: 0 ... ", *off, *sh);
-        for (j = 0; j <= *off; j++)
-            printf("0x%x ", buf[j]);
-        printf("\n");
 
-        buf[*off] <<= 1;
-        *off += tree_buff_off_incr(sh);
-        deflate_tree(root->left, buf, off, sh);
-        deflate_tree(root->right, buf, off, sh);
+        return;
     }
+
+    buf[*off] <<= 1;
+    *off += tree_buff_off_incr(sh);
+    deflate_tree(root->left, buf, off, sh);
+    deflate_tree(root->right, buf, off, sh);
 }
 
+/* Wrapper for tree deflation. */
 uint8_t *encode_tree(struct node *root, uint16_t *eoff, uint8_t *esh) {
-    uint8_t sh, *buf;
-    uint16_t off, i;
+    uint8_t sh = 0, *buf = NULL;
+    uint16_t off = 0;
 
+    /* Allocate a large enough array to hold the tree buffer. */
     buf = calloc(MAX_HIST_TAB_LEN * MAX_INT_BUF_BITS, sizeof(uint8_t));
-    off = 0;
-    sh = 0;
+    assert(buf);
 
     deflate_tree(root, buf, &off, &sh);
 
-    printf("tree_buf: ");
-    for (i = 0; i <= off; i++) {
-        printf("0x%hhx ", buf[i]);
-    }
-    printf("\n");
-
+    /* Shift any leftover bits to the right. */
     if (sh && (sh < MAX_INT_BUF_BITS)) {
         buf[off] <<= (MAX_INT_BUF_BITS - sh);
     }
 
-    printf("deflate: %u, %u\n", off, sh);
-    printf("tree_buf: ");
-    for (i = 0; i <= off; i++) {
-        printf("0x%hhx ", buf[i]);
-    }
-    printf("\n");
-
-    // decode_tree(buf, off, sh);
     *eoff = off + 1;
     *esh = sh + 1;
     return buf;
 }
 
+/* Read the deflated tree buffer to construct the tree.
+ *
+ * The most significant bit is checked to see if it is a leaf node. If that
+ * is the case, then the next "MAX_INT_BUF_BITS" are read to get the byte
+ * value at the leaf node. A new leaf node is created. Otherwise, it is an
+ * intermediate node, and this function is called recursively until all the
+ * leaf nodes are created. The last non-leaf node will be the root of the
+ * tree.
+ */
 static struct node *inflate_tree(uint8_t *buf, uint16_t eoff, uint8_t esh,
                                  uint16_t *doff, uint8_t *dsh) {
-    uint8_t bit, mask, sh, last, i;
+    uint8_t last = 0, sh = MAX_INT_BUF_BITS, bit, mask, i;
     struct node *n;
 
     n = calloc(1, sizeof(struct node));
@@ -189,57 +197,47 @@ static struct node *inflate_tree(uint8_t *buf, uint16_t eoff, uint8_t esh,
 
     mask = 0x1U << (MAX_INT_BUF_BITS - 1);
 
-    // printf("inflate_tree: eoff: %u doff: %u esh: %u, dsh: %u\n", eoff, *doff,
-    // esh, *dsh);
-
-    if (*doff >= eoff) {
+    /* No more bytes left to decode. */
+    if (*doff >= eoff)
         return NULL;
-    }
 
-    sh = MAX_INT_BUF_BITS;
-    last = 0;
+    /* Only read the leftover bits, for the last byte. */
     if (*doff == (eoff - 1)) {
-        printf("last byte\n");
         sh = esh;
         last = 1;
     }
 
     bit = ((buf[*doff] << *dsh) & mask) > 0;
-    printf("off: %u, sh: %u, byte: 0x%x, bit: %u\n", *doff, *dsh, buf[*doff],
-           bit);
     *doff += tree_buff_off_incr(dsh);
 
+    /* Leaf node. */
     if (bit) {
         n->left = NULL;
         n->right = NULL;
 
-        printf("leaf: ");
         for (i = 0; i < sh; i++) {
             bit = ((buf[*doff] << *dsh) & mask) > 0;
-            printf("%d", bit);
+            *doff += tree_buff_off_incr(dsh);
+
             n->data.ch <<= 1;
             n->data.ch = n->data.ch | bit;
-            *doff += tree_buff_off_incr(dsh);
         }
 
-        printf("\nret: %c\n", n->data.ch);
         return n;
     }
 
+    /* Intermediate (or root) node. */
     n->data.ch = PSEUDO_TREE_BYTE;
     n->left = inflate_tree(buf, eoff, esh, doff, dsh);
     n->right = inflate_tree(buf, eoff, esh, doff, dsh);
 
-    // printf("ret\n");
     return n;
 }
 
+/* Wrapper for tree inflation. */
 struct node *decode_tree(uint8_t *buf, uint16_t eoff, uint8_t esh) {
-    uint8_t dsh;
-    uint16_t doff;
-
-    dsh = 0;
-    doff = 0;
+    uint8_t dsh = 0;
+    uint16_t doff = 0;
 
     return inflate_tree(buf, eoff, esh, &doff, &dsh);
 }

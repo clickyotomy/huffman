@@ -137,9 +137,9 @@ void encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *nr_rd_bytes,
  *
  * Decoding is done by extracting bits from each byte read from
  * the file. After reaching a leaf node by walking the Huffman
- * tree (depending on the "0" -- left -- or "1" -- right --) from
- * the bits. The resultant byte obtained from the tree traversal
- * is written to the output file.
+ * tree (depending on: "0" - left, or "1" - right) from the bits.
+ * The resultant byte obtained from the tree traversal is written
+ * to the output file.
  */
 void decode(FILE *ifile, uint64_t nr_en_bytes, struct node *root, FILE *ofile,
             uint64_t *nr_rd_bytes, uint64_t *nr_wr_bytes) {
@@ -217,7 +217,6 @@ ret:
 /* All the things happen here. */
 int main(int argc, char *argv[]) {
     uint8_t *tbuf = NULL;
-    uint16_t i;
     uint32_t map_sz;
     uint64_t nr_rbytes, nr_wbytes;
     int16_t arg, enc = 1;
@@ -274,14 +273,13 @@ int main(int argc, char *argv[]) {
 
         /*
          *
-         *  +---+---+------------------ >   < +------------------- >   < -+
-         *  | M | B | MAP[0, 1, ..., M] >   < | ENC [0, 1, ..., B] >   <  |
-         *  +---+---+------------------ >   < +------------------- >   < -+
+         *  +---------+-------------------- >  < +-------------------- >  < -+
+         *  |  HEADER | TREE [0, 1, ... N]  >  < | ENC [0, 1, ..., B]  >  <  |
+         *  +---------+-------------------- >  < +-------------------- >  < -+
          *
-         *  - M     Number of entries in the frequency map.
-         *  - B     Number of encoded bytes (excluding headers).
-         *  - MAP[] Frequency map entries.
-         *  - ENC[] Encoded bytes.
+         *  - HEADER    File header containing the "map" struct.
+         *  - TREE[]    Encoded Huffman tree.
+         *  - ENC[]     Encoded bytes.
          */
 
         /* Write headers to the encoded output file. */
@@ -291,7 +289,6 @@ int main(int argc, char *argv[]) {
         tbuf = encode_tree(head, &fmeta.nr_tree_bytes, &fmeta.tree_lb_sh_pos);
         assert(tbuf);
 
-        printf("tb: %u\n", fmeta.nr_tree_bytes);
         fwrite(tbuf, sizeof(uint8_t), fmeta.nr_tree_bytes, ofile);
 
         /* Write the encoded bytes to the file. */
@@ -308,22 +305,14 @@ int main(int argc, char *argv[]) {
 
         /* Read the file headers. */
         fread(&fmeta, sizeof(struct meta), 1, ifile);
-        printf("tb: %u, sh: %u\n", fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
-        assert(fmeta.nr_tree_bytes);
-        assert(fmeta.nr_src_bytes);
-        assert(fmeta.nr_enc_bytes);
+        assert(fmeta.nr_tree_bytes > 0);
+        assert(fmeta.nr_src_bytes > 0);
+        assert(fmeta.nr_enc_bytes > 0);
 
         /* Read the tree from file into a temporary buffer and inflate it. */
         tbuf = calloc(fmeta.nr_tree_bytes, sizeof(uint8_t));
         assert(tbuf);
         fread(tbuf, sizeof(uint8_t), fmeta.nr_tree_bytes, ifile);
-
-        printf("tree_buf: ");
-        for (i = 0; i < fmeta.nr_tree_bytes; i++) {
-            printf("0x%hhx ", tbuf[i]);
-        }
-        printf("\n");
-
         head = decode_tree(tbuf, fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
 
         /* Decode the file and write to the output file. */
