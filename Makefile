@@ -2,7 +2,7 @@ SHELL       = /bin/bash
 PROG_NAME   = huffman
 CC          = g++
 CFLAGS      = -std=c++17 -Wall -Wextra -pedantic -ggdb -O3
-OBJS        = $(PROG_NAME).o tree.o map.o queue.o
+OBJS        = $(PROG_NAME).o tree.o map.o queue.o decode_table.o
 FMT         = clang-format -style='{IndentWidth: 4,TabWidth: 4}' -i
 VALGRIND    = valgrind --leak-check=full --show-leak-kinds=all
 PERF_EVENTS = 'cache-references,cache-misses,cycles,instructions,branches,faults,migrations'
@@ -22,12 +22,12 @@ $(PROG_NAME): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
 
-%.o: %.c
+%.o: %.c &.cc
 	$(CC) $< $(CFLAGS) -c -o $@
 
 
 format:
-	$(FMT) *.c *.h
+	$(FMT) *.c *.h *.cc
 
 
 test: default

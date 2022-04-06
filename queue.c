@@ -88,13 +88,13 @@ struct node *make_queue(struct map *fmap, uint32_t size) {
 
     for (i = 0; i < size; i++) {
         if (!head) {
-            head = (struct node *) calloc(1, sizeof(struct node));
+            head = (struct node *)calloc(1, sizeof(struct node));
             assert(head);
 
             memcpy(&head->data, &fmap[i], sizeof(struct map));
             init_queue(&head);
         } else {
-            temp = (struct node *) calloc(1, sizeof(struct node));
+            temp = (struct node *)calloc(1, sizeof(struct node));
             assert(temp);
 
             memcpy(&temp->data, &fmap[i], sizeof(struct map));

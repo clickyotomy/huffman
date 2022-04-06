@@ -56,7 +56,7 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
     assert(th > 0);
 
     /* Temporary array to store the Huffman code. */
-    arr = (uint8_t *) calloc(th, sizeof(uint8_t));
+    arr = (uint8_t *)calloc(th, sizeof(uint8_t));
     shift = 0;
 
     while ((file_ch = fgetc(ifile)) != EOF) {
@@ -298,7 +298,7 @@ int main(int argc, char *argv[]) {
         fread(&fmeta, sizeof(struct meta), 1, ifile);
         assert(fmeta.map_sz > 0 && fmeta.nr_bytes > 0);
 
-        fmap = (map *) calloc(fmeta.map_sz, sizeof(struct map));
+        fmap = (map *)calloc(fmeta.map_sz, sizeof(struct map));
         for (i = 0; i < fmeta.map_sz; i++)
             fread(&fmap[i], sizeof(struct map), 1, ifile);
 
@@ -308,6 +308,10 @@ int main(int argc, char *argv[]) {
 
         /* Decode the file and write to the output file. */
         nr_bytes = decode(ifile, fmeta.nr_bytes, head, ofile);
+
+        /* Get the decoding table */
+        DecodeTable decode_table;
+        get_decoder_table(head, &decode_table);
     }
 
     nuke_tree(&head);
