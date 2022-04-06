@@ -225,7 +225,7 @@ int main(int argc, char *argv[]) {
 
     struct node *head = NULL;
     struct map *fmap = NULL;
-    struct meta fmeta;
+    struct meta fmeta = {0, 0, 0, 0};
 
     while ((arg = getopt(argc, argv, "edi:o:h?")) > 0) {
         switch (arg) {
