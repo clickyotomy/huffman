@@ -168,7 +168,11 @@ uint8_t *encode_tree(struct node *root, uint16_t *eoff, uint8_t *esh) {
 
     deflate_tree(root, buf, &off, &sh);
 
-    /* Shift any leftover bits to the right. */
+    /*
+     * Shift any leftover bits to the left. Since the byte is read
+     * from the right (during inflation), we want theencoded values 
+     * to be there.
+     */
     if (sh && (sh < MAX_INT_BUF_BITS)) {
         buf[off] <<= (MAX_INT_BUF_BITS - sh);
     }
