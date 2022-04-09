@@ -111,7 +111,7 @@ static inline int16_t tree_buff_off_incr(uint8_t *sh) {
  * The tree is encoded as follows:
  *
  *  +---+---------------+---+---+---+-------------+-- >  < --+
- *  | L | B [0, ..., 8] | L | L | L | [0, ..., 8] |   >  <   |
+ *  | L | B [0, ..., 7] | L | L | L | [0, ..., 7] |   >  <   |
  *  +---+---------------+---+---+---+-------------+-- >  < --+
  *
  *  - L     A bit indicating whether a node is a leaf. If the node is a

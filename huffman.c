@@ -163,10 +163,11 @@ void decode(FILE *ifile, uint64_t nr_en_bytes, struct node *root, FILE *ofile,
     mask = 0x1U << (MAX_INT_BUF_BITS - 1);
 
     file_ch = fgetc(ifile);
-    nr_rbytes++;
 
     if (file_ch == EOF)
         goto ret;
+
+    nr_rbytes++;
 
     while (1) {
         chunk = (uint8_t)file_ch << shift;
@@ -185,6 +186,7 @@ void decode(FILE *ifile, uint64_t nr_en_bytes, struct node *root, FILE *ofile,
                 break;
 
             fputc(branch->data.ch, ofile);
+            printf("byte: %hhx\n", branch->data.ch);
             nr_wbytes++;
 
             /* Reset the branch to the root for the next byte. */
@@ -306,8 +308,8 @@ int main(int argc, char *argv[]) {
         /* Read the file headers. */
         fread(&fmeta, sizeof(struct meta), 1, ifile);
         assert(fmeta.nr_tree_bytes > 0);
-        assert(fmeta.nr_src_bytes > 0);
-        assert(fmeta.nr_enc_bytes > 0);
+        assert(fmeta.nr_src_bytes >= 0);
+        assert(fmeta.nr_enc_bytes >= 0);
 
         /* Read the tree from file into a temporary buffer and inflate it. */
         tbuf = calloc(fmeta.nr_tree_bytes, sizeof(uint8_t));
