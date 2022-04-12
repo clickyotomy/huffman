@@ -32,24 +32,24 @@
 #define PSEUDO_NULL_BYTE (MAX_HIST_TAB_LEN - 0x2U)
 
 /* Stores the metadata for the encoded file/ */
-struct meta {
+typedef struct meta {
     uint32_t map_sz;   /* Size of the map. */
     uint64_t nr_bytes; /* Number of encoded bytes (excluding headers). */
-};
+} meta_t;
 
 /* Maps a character to its frequency in the data. */
-struct map {
+typedef struct map {
     uint8_t ch;
     uint32_t freq;
-};
+} map_t;
 
 /* Represents a node in the priority queue (or tree). */
-struct node {
+typedef struct node {
     struct node *next;  /* Next link in the linked list (queue). */
     struct node *right; /* Tree node to the right. */
     struct node *left;  /* Tree node to the left. */
     struct map data;    /* A mapping of byte to its frequency. */
-};
+} node_t;
 
 /* Routines for trees. */
 uint32_t tree_height(struct node *root);
