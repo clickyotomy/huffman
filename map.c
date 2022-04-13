@@ -1,4 +1,5 @@
 #include "huffman.h"
+#include "tree.h" // for defines
 
 /*
  * Return the number of non-zero

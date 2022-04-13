@@ -1,5 +1,7 @@
 #include "huffman.h"
 #include "decode_parallel.h"
+#include "tree.h"
+#include "queue.h"
 
 /* Print program usage. */
 void prog_usage(const char *prog) {

@@ -1,4 +1,8 @@
 #include <assert.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <driver_functions.h>
+
 #include "decode_parallel.h"
 #include "queue.h"
 #include "tree.h"
@@ -29,7 +33,7 @@ char * get_bit_string_device(FILE *ifile, uint64_t rd_bits) {
  * Build a Huffmann encoding tree from a priority queue.
  * This tree is on the device.
  */
-void make_tree_device(struct node**head) {
+void make_tree_device(struct node **head) {
     assert(*head);
 
     struct node *lt, *rt, *up;
