@@ -249,21 +249,21 @@ void decode_cuda(uint64_t total_nr_bits, const char *bit_string, tree_arr_node_t
 
     phase1_decode_subseq<<<num_sequences, THREADS_PER_BLOCK>>>(total_nr_bits, num_subseq, bit_string, decode_table, sync_points);
 
-    /* Phase 2 */
-    bool blocks_synchronized = false;
-    bool *sequences_sync;
-    cudaMalloc((void **)&sequences_sync, num_sequences * sizeof(bool));
-
-    while (!blocks_synchronized){
-        phase2_synchronise_blocks<<<num_sequences, THREADS_PER_BLOCK>>>(total_nr_bits, num_sequences, bit_string, decode_table,
-                                                                        sync_points, sequences_sync);
-        const size_t num_blocks = num_sequences - 1;
-        blocks_synchronized = true;
-        for(size_t i = 1; i < num_blocks; i++) {
-            if(sequences_sync[i] == 0) {
-                blocks_synchronized = false;
-                break;
-            }
-        }
-    }
+//    /* Phase 2 */
+//    bool blocks_synchronized = false;
+//    bool *sequences_sync;
+//    cudaMalloc((void **)&sequences_sync, num_sequences * sizeof(bool));
+//
+//    while (!blocks_synchronized){
+//        phase2_synchronise_blocks<<<num_sequences, THREADS_PER_BLOCK>>>(total_nr_bits, num_sequences, bit_string, decode_table,
+//                                                                        sync_points, sequences_sync);
+//        const size_t num_blocks = num_sequences - 1;
+//        blocks_synchronized = true;
+//        for(size_t i = 1; i < num_blocks; i++) {
+//            if(sequences_sync[i] == 0) {
+//                blocks_synchronized = false;
+//                break;
+//            }
+//        }
+//    }
 }
