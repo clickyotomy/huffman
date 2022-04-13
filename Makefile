@@ -1,7 +1,7 @@
 SHELL       = /bin/bash
 PROG_NAME   = huffman
 CC          = g++
-CFLAGS      = -m64 -std=c++17 -Wall -Wextra -pedantic -ggdb -O3
+CFLAGS      = -m64 -Wall -Wextra -pedantic -ggdb -O3
 LDFLAGS     =-L/usr/local/depot/cuda-10.2/lib64/ -lcudart
 OBJS        = $(PROG_NAME).o tree.o map.o queue.o decode_parallel.o
 NVCC        =nvcc
