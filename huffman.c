@@ -1,4 +1,5 @@
 #include "huffman.h"
+#include "decode_parallel.h"
 
 /* Print program usage. */
 void prog_usage(const char *prog) {
@@ -216,7 +217,7 @@ int main(int argc, char *argv[]) {
     uint64_t nr_bytes;
     struct node *head = NULL;
     struct map *fmap = NULL;
-    struct meta fmeta = {0, 0};
+    struct meta fmeta = {0, 0, 0};
     FILE *ifile, *ofile;
     char *ifpath, *ofpath;
     int16_t arg, enc = 1;
@@ -314,7 +315,7 @@ int main(int argc, char *argv[]) {
         /* Decode the file and write to the output file. */
 //        nr_bytes = decode(ifile, fmeta.nr_bytes, head, ofile);
         char *bit_string = get_bit_string_device(ifile, fmeta.nr_bits);
-        nr_bytes = decode_cuda(fmeta.nr_bits, *bit_string, head);
+        decode_cuda(fmeta.nr_bits, bit_string, head);
     }
 
     nuke_tree(&head);

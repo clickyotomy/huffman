@@ -1,8 +1,13 @@
 SHELL       = /bin/bash
 PROG_NAME   = huffman
 CC          = g++
-CFLAGS      = -std=c++17 -Wall -Wextra -pedantic -ggdb -O3
-OBJS        = $(PROG_NAME).o tree.o map.o queue.o
+CFLAGS      = -m64 -std=c++17 -Wall -Wextra -pedantic -ggdb -O3
+LDFLAGS     =-L/usr/local/depot/cuda-10.2/lib64/ -lcudart
+OBJS        = $(PROG_NAME).o tree.o map.o queue.o decode_parallel.o
+NVCC        =nvcc
+NVCCFLAGS   =-O3 -m64 --gpu-architecture compute_61 -ccbin /usr/bin/gcc
+CU_DEPS     =
+CU_FILES    = decode_parallel.cu
 FMT         = clang-format -style='{IndentWidth: 4,TabWidth: 4}' -i
 VALGRIND    = valgrind --leak-check=full --show-leak-kinds=all
 PERF_EVENTS = 'cache-references,cache-misses,cycles,instructions,branches,faults,migrations'

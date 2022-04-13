@@ -1,5 +1,4 @@
-#include "decode_table.h"
-
+#include "decode_parallel.h"
 
 #define SUBSEQ_LENGTH 50
 
