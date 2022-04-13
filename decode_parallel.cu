@@ -29,43 +29,41 @@ char * get_bit_string_device(FILE *ifile, uint64_t rd_bits) {
 }
 
 
+void make_tree_arr_helper(tree_arr_node_t *tree_arr, node_t *head, int i) {
+//    printf("helper: %d\n", i);
+    tree_arr[i].ch = 0;
+
+    if (tree_leaf(head)) {
+        tree_arr[i].ch = head->data.ch;
+        return;
+    }
+    make_tree_arr_helper(tree_arr, head->left, 2*i);
+    make_tree_arr_helper(tree_arr, head->right, 2*i + 1);
+}
 /*
  * Build a Huffmann encoding tree from a priority queue.
  * This tree is on the device.
  */
-void make_tree_device(struct node **head) {
-    assert(*head);
+tree_arr_node_t *make_tree_device(struct node *head, uint32_t tree_depth) {
+    uint64_t array_size = 0x1U << (tree_depth);
 
-    struct node *lt, *rt, *up;
+    tree_arr_node_t * tree_arr_host = (tree_arr_node_t *) calloc(array_size, sizeof(tree_arr_node_t ));
+    printf("size: %d\n", array_size);
+    make_tree_arr_helper(tree_arr_host, head, 1);
 
-    while (queue_size(*head) > 1) {
-        lt = dequeue(head);
-        rt = dequeue(head);
+    tree_arr_node_t * tree_arr_device;
+    cudaMalloc(&tree_arr_device, array_size * sizeof(tree_arr_node_t ));
+    cudaMemcpy(tree_arr_device, tree_arr_host, array_size * sizeof(tree_arr_node_t), cudaMemcpyHostToDevice);
+    free(tree_arr_host);
 
-        /* Malloc on the device */
-        cudaMalloc(&up, sizeof(struct node));
-
-        up->data.ch = PSEUDO_TREE_BYTE;
-        up->data.ch = 0;
-        up->data.freq = (lt->data.freq + rt->data.freq);
-        up->left = lt;
-        up->right = rt;
-
-        if (*head) {
-            enqueue(head, up);
-        } else {
-            *head = up;
-            init_queue(head);
-        }
-    }
+    return tree_arr_device;
 }
 
-__device__ __inline__
 /* Return true if the node is the leaf of a tree. */
-uint8_t is_tree_leaf(struct node *node) {
-    assert(node);
-
-    return (!node->left && !node->right);
+__device__ __inline__
+bool is_tree_arr_leaf(tree_arr_node_t *arr) {
+    assert(arr);
+    return arr->ch != 0;
 }
 
 /*
@@ -74,25 +72,25 @@ uint8_t is_tree_leaf(struct node *node) {
  */
 #define UNIT_SIZE 8
 __device__ __inline__
-uint64_t decode_one_symb(uint64_t bit_offset,  struct node *decode_root, const char *bits, uint64_t end_bit_offset) {
+uint64_t decode_one_symb(uint64_t bit_offset,  tree_arr_node_t *decode_root, const char *bits, uint64_t end_bit_offset) {
 
     uint64_t cur_bit_offset = 0;
 
-    struct node *branch = decode_root;
 
+    int i = 1;
     while (cur_bit_offset < end_bit_offset) {
 
         uint64_t cur_unit = cur_bit_offset / UNIT_SIZE;
         uint64_t cur_bit_in_unit = (UNIT_SIZE - 1) - (cur_bit_offset % UNIT_SIZE);
         uint64_t cur_bit = (bits[cur_unit] & (0x1U << cur_bit_in_unit));
         /* Determine which branch to take depending on the extracted bit. */
-        branch = cur_bit ? branch->right : branch->left;
+        i = cur_bit ? 2 * i : 2 * i + 1;
 
         /*
          * If we reached the leaf node, we have decoded a byte;
          * write it to the output file.
          */
-        if (is_tree_leaf(branch)) {
+        if (is_tree_arr_leaf(decode_root + i)) {
             /* Let's skip out on the writing first */
 //            fputc(branch->data.ch, ofile);
             break;
@@ -105,7 +103,7 @@ uint64_t decode_one_symb(uint64_t bit_offset,  struct node *decode_root, const c
 }
 
 __device__ __inline__
-void decode_subsequence(struct node *decode_tree, const char *bit_string, uint64_t subseq_start, uint64_t total_nr_bits,
+void decode_subsequence(tree_arr_node_t *decode_tree, const char *bit_string, uint64_t subseq_start, uint64_t total_nr_bits,
                         int *out_num_symbols, uint64_t *out_last_offset) {
 
     /* start decoding from the start of the subsequence */
@@ -130,7 +128,7 @@ __global__ void phase1_decode_subseq(
         uint64_t total_nr_bits,
         uint32_t total_num_subsequences,
         const char *bit_string,
-        struct node *decode_tree,
+        tree_arr_node_t *decode_tree,
         sync_point_t * sync_points) {
 
     const int gid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -186,7 +184,7 @@ __global__ void phase2_synchronise_blocks(
         uint64_t total_nr_bits,
         int num_blocks,
         const char *bit_string,
-        struct node *decode_tree,
+        tree_arr_node_t *decode_tree,
         sync_point_t * sync_points,
         bool *block_synchronised) {
 
@@ -240,7 +238,7 @@ __global__ void phase2_synchronise_blocks(
 
 
 /* We assume that the decode_table and bit_string is malloc-ed in cuda */
-void decode_cuda(uint64_t total_nr_bits, const char *bit_string, struct node *decode_table) {
+void decode_cuda(uint64_t total_nr_bits, const char *bit_string, tree_arr_node_t *decode_table) {
 
     size_t num_subseq = updivide(total_nr_bits, SUBSEQ_LENGTH);
     size_t num_sequences = updivide(num_subseq, THREADS_PER_BLOCK);

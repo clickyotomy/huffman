@@ -20,7 +20,6 @@ RAND_FMIN   ?= 1024       # 1 kB.
 RAND_FMAX   ?= 4294967296 # 4 * 1024 * 1024 * 1024 bytes (~4GB).
 RAND_FAWK   = BEGIN{ srand(); print int(rand()*($(RAND_FMAX)-$(RAND_FMIN))+$(RAND_FMIN)) }
 
-
 default: $(PROG_NAME)
 
 $(PROG_NAME): $(OBJS)

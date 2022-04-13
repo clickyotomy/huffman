@@ -219,7 +219,7 @@ int main(int argc, char *argv[]) {
     uint64_t nr_bytes;
     struct node *head = NULL;
     struct map *fmap = NULL;
-    struct meta fmeta = {0, 0, 0};
+    struct meta fmeta = {0, 0, 0, 0};
     FILE *ifile, *ofile;
     char *ifpath, *ofpath;
     int16_t arg, enc = 1;
@@ -294,9 +294,11 @@ int main(int argc, char *argv[]) {
          * Rewind back to write the number of encoded
          * bytes to the output file header.
          */
+        uint32_t depth = tree_height(head);
         rewind(ofile);
         fmeta.nr_bytes = nr_bytes;
         fmeta.nr_bits = nr_bits;
+        fmeta.tree_depth = depth;
         fwrite(&fmeta, sizeof(struct meta), 1, ofile);
     } else {
         /* Decoding. */
@@ -311,13 +313,14 @@ int main(int argc, char *argv[]) {
 
         /* Build the queue, and the tree from the headers. */
         head = make_queue(fmap, fmeta.map_sz);
-//        make_tree(&head);
-        make_tree_device(&head);
+        make_tree(&head);
+
+        tree_arr_node_t * tree_arr = make_tree_device(head, fmeta.tree_depth);
 
         /* Decode the file and write to the output file. */
 //        nr_bytes = decode(ifile, fmeta.nr_bytes, head, ofile);
         char *bit_string = get_bit_string_device(ifile, fmeta.nr_bits);
-        decode_cuda(fmeta.nr_bits, bit_string, head);
+        decode_cuda(fmeta.nr_bits, bit_string, tree_arr);
     }
 
     nuke_tree(&head);
