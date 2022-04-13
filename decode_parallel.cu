@@ -252,7 +252,7 @@ void decode_cuda(uint64_t total_nr_bits, const char *bit_string, const node_t *d
         phase2_synchronise_blocks<<<num_sequences, threads_per_block>>>(total_nr_bits, num_sequences, bit_string, decode_table,
                                                                         sync_points, sequences_sync);
         const size_t num_blocks = num_sequences - 1;
-        blcok_synchronized = true;
+        blocks_synchronized = true;
         for(size_t i = 1; i < num_blocks; i++) {
             if(sequences_sync[i] == 0) {
                 blocks_synchronized = false;
