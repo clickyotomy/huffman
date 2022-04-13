@@ -35,6 +35,7 @@
 typedef struct meta {
     uint32_t map_sz;   /* Size of the map. */
     uint64_t nr_bytes; /* Number of encoded bytes (excluding headers). */
+    uint64_t nr_bits; /* Number of encoded bits (excluding headers). */
 } meta_t;
 
 /* Maps a character to its frequency in the data. */

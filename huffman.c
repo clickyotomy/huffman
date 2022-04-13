@@ -40,7 +40,7 @@ int8_t huffman_code(uint8_t ch, struct node *root, uint8_t *arr) {
  * are packed together until the size of a byte is reached.
  * The byte is then written to the output file.
  */
-uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
+uint64_t encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *out_nr_bits) {
     uint8_t *arr, shift, chunk;
     uint8_t code = 0;
     uint32_t th;
@@ -58,6 +58,7 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
     /* Temporary array to store the Huffman code. */
     arr = (uint8_t *) calloc(th, sizeof(uint8_t));
     shift = 0;
+    uint64_t total_nr_bits = 0;
 
     while ((file_ch = fgetc(ifile)) != EOF) {
         /* Read a byte from the file. */
@@ -65,6 +66,7 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
 
         /* Calculate the Huffman code. */
         off = huffman_code(chunk, root, arr);
+        total_nr_bits += (uint64_t) off;
         assert(off > 0);
 
         /*
@@ -119,7 +121,7 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile) {
     }
 
     free(arr);
-
+    *out_nr_bits = total_nr_bits;
     return nr_bytes;
 }
 
@@ -282,7 +284,8 @@ int main(int argc, char *argv[]) {
             fwrite(&fmap[i], sizeof(struct map), 1, ofile);
 
         /* Write the encoded bytes to the file. */
-        nr_bytes = encode(ifile, head, ofile);
+        uint64_t nr_bits;
+        nr_bytes = encode(ifile, head, ofile, &nr_bits);
 
         /*
          * Rewind back to write the number of encoded
@@ -290,6 +293,7 @@ int main(int argc, char *argv[]) {
          */
         rewind(ofile);
         fmeta.nr_bytes = nr_bytes;
+        fmeta.nr_bits = nr_bits;
         fwrite(&fmeta, sizeof(struct meta), 1, ofile);
     } else {
         /* Decoding. */
@@ -304,10 +308,13 @@ int main(int argc, char *argv[]) {
 
         /* Build the queue, and the tree from the headers. */
         head = make_queue(fmap, fmeta.map_sz);
-        make_tree(&head);
+//        make_tree(&head);
+        make_tree_device(&head);
 
         /* Decode the file and write to the output file. */
-        nr_bytes = decode(ifile, fmeta.nr_bytes, head, ofile);
+//        nr_bytes = decode(ifile, fmeta.nr_bytes, head, ofile);
+        char *bit_string = get_bit_string_device(ifile, fmeta.nr_bits);
+        nr_bytes = decode_cuda(fmeta.nr_bits, *bit_string, head);
     }
 
     nuke_tree(&head);

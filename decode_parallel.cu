@@ -2,20 +2,73 @@
 
 
 #define SUBSEQ_LENGTH 50
+
+/* Bit string is on the device */
+char * get_bit_string_device(FILE *ifile, uint64_t rd_bits) {
+    assert(ifile);
+
+    int num_bytes = (rd_bits + 0x7U) / 0x8U;
+
+    // allocate memory to contain the whole file:
+    char * buffer_host = (char*) malloc (sizeof(char)*lSize);
+    // copy the file into the buffer:
+    result = fread(buffer_host, 1, num_bytes, ifile);
+
+    char * buffer_device;
+    cudaMalloc(&buffer_device, num_bytes);
+    cudaMemcpy(buffer_device, buffer_host, num_bytes, cudaMemcpyHostToDevice);
+
+    free(buffer_host);
+    return buffer_device;
+}
+
+
 /*
+ * Build a Huffmann encoding tree from a priority queue.
+ * This tree is on the device.
+ */
+void make_tree_device(node_t **head) {
+    assert(*head);
+
+    node_t *lt, *rt, *up;
+
+    while (queue_size(*head) > 1) {
+        lt = dequeue(head);
+        rt = dequeue(head);
+
+        /* Malloc on the device */
+        cudaMalloc(&up, sizeof(node_t));
+
+        up->data.ch = PSEUDO_TREE_BYTE;
+        up->data.ch = 0;
+        up->data.freq = (lt->data.freq + rt->data.freq);
+        up->left = lt;
+        up->right = rt;
+
+        if (*head) {
+            enqueue(head, up);
+        } else {
+            *head = up;
+            init_queue(head);
+        }
+    }
+}
+
+/*
+ *
  *  Returns the number of bits taken to decode the current symbol
  */
 #define UNIT_SIZE 8
-uint64_t decode_one_symb(uint64_t bit_offset,  node_t *decode_root, char *bits) {
+uint64_t decode_one_symb(uint64_t bit_offset,  node_t *decode_root, char *bits, uint64_t end_bit_offset) {
 
     uint64_t cur_bit_offset = 0;
 
     node_t *branch;
 
-    while (1) {
+    while (cur_bit_offset < end_bit_offset) {
 
         uint64_t cur_unit = cur_bit_offset / UNIT_SIZE;
-        uint64_t cur_bit_in_unit = cur_bit_offset % UNIT_SIZE;
+        uint64_t cur_bit_in_unit = (UNIT_SIZE - 1) - (cur_bit_offset % UNIT_SIZE);
         uint64_t cur_bit = (bits[cur_unit] & (0x1U << cur_bit_in_unit));
         /* Determine which branch to take depending on the extracted bit. */
         branch = cur_bit ? branch->right : branch->left;
@@ -27,10 +80,7 @@ uint64_t decode_one_symb(uint64_t bit_offset,  node_t *decode_root, char *bits) 
         if (tree_leaf(branch)) {
             /* Let's skip out on the writing first */
 //            fputc(branch->data.ch, ofile);
-
-            /* This marks the end of the decoded file. */
-            if (branch->data.ch == PSEUDO_NULL_BYTE) {
-                break;
+            break;
         }
 
         cur_bit_offset++;
@@ -39,7 +89,7 @@ uint64_t decode_one_symb(uint64_t bit_offset,  node_t *decode_root, char *bits) 
     return cur_bit_offset - bit_offset;
 }
 
-__global__ void decode_subsequence(node_t *decode_tree, char *bit_string, uint64_t subseq_start,
+__global__ void decode_subsequence(node_t *decode_tree, char *bit_string, uint64_t subseq_start, uint64_t total_nr_bits
                         int *out_num_symbols, uint64_t *out_last_offset) {
 
     /* start decoding from the start of the subsequence */
@@ -49,7 +99,7 @@ __global__ void decode_subsequence(node_t *decode_tree, char *bit_string, uint64
     int num_symbols = 0;
 
     while (offset < subseq_end) {
-        uint64_t num_bits = decode_one_symb(offset,  decode_tree, char *bit_string);
+        uint64_t num_bits = decode_one_symb(offset,  decode_tree, bit_string, total_nr_bits);
         offset += num_bits;
         prev_num_bits = num_bits;
         num_symbols++;
@@ -68,6 +118,7 @@ typedef struct sync_point {
 } sync_point_t;
 
 __global__ void phase1_decode_subseq(
+        uint64_t total_nr_bits,
         std::uint32_t total_num_subsequences,
         const char *bit_string,
         node_t *decode_table,
@@ -88,7 +139,7 @@ __global__ void phase1_decode_subseq(
 
             if(!synchronised_flag && current_subsequence < total_num_subsequences) {
                 int num_symbols, last_word_bit;
-                decode_subsequence(decode_tree, bit_string, cur_pos, &num_symbols, &last_word_bit);
+                decode_subsequence(decode_tree, bit_string, cur_pos, total_nr_bits, &num_symbols, &last_word_bit);
 
                 if(subsequences_processed == 0) {
                     sync_points[current_subsequence] =
@@ -121,6 +172,7 @@ __global__ void phase1_decode_subseq(
 
 
 __global__ void phase2_synchronise_blocks(
+        uint64_t total_nr_bits,
         int num_blocks,
         const char *bit_string,
         node_t *decode_table,
@@ -148,7 +200,7 @@ __global__ void phase2_synchronise_blocks(
 
             if(!synchronised_flag) {
                 int last_word_bit;
-                decode_subsequence(decode_tree, bit_string, cur_pos, &num_symbols, &last_word_bit);
+                decode_subsequence(decode_tree, bit_string, cur_pos, total_nr_bits, &num_symbols, &last_word_bit);
                 sync_point = sync_points[current_subsequence];
                 sync_point.num_symbols = num_symbols;
 
@@ -180,7 +232,7 @@ __global__ void phase2_synchronise_blocks(
 
 
 /* We assume that the decode_table and bit_string is malloc-ed in cuda */
-void decode_cuda(const char *bit_string, const node_t *decode_table) {
+void decode_cuda(uint64_t total_nr_bits, const char *bit_string, const node_t *decode_table) {
 
     size_t num_subseq = updivide(input_size, SUBSEQ_LENGTH);
     size_t num_sequences = updivide(num_subseq, threads_per_block);
@@ -189,7 +241,7 @@ void decode_cuda(const char *bit_string, const node_t *decode_table) {
     sync_point_t *sync_points;
     cudaMalloc((void **)&sync_points, num_subseq * sizeof(sync_point_t));
 
-    phase1_decode_subseq<<<num_sequences, threads_per_block>>>(num_subseq, bit_string, decode_table, sync_points);
+    phase1_decode_subseq<<<num_sequences, threads_per_block>>>(total_nr_bits, num_subseq, bit_string, decode_table, sync_points);
 
     /* Phase 2 */
     bool blocks_synchronized = false;
@@ -197,7 +249,7 @@ void decode_cuda(const char *bit_string, const node_t *decode_table) {
     cudaMalloc((void **)&sequences_sync, num_sequences * sizeof(bool));
 
     while (!blocks_synchronized){
-        phase2_synchronise_blocks<<<num_sequences, threads_per_block>>>(num_sequences, bit_string, decode_table,
+        phase2_synchronise_blocks<<<num_sequences, threads_per_block>>>(total_nr_bits, num_sequences, bit_string, decode_table,
                                                                         sync_points, sequences_sync);
         const size_t num_blocks = num_sequences - 1;
         blcok_synchronized = true;
