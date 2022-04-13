@@ -26,6 +26,8 @@ default: $(PROG_NAME)
 $(PROG_NAME): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
+%.o: %.cu
+		$(NVCC) $< $(NVCCFLAGS) -c -o $@
 
 %.o: %.c
 	$(CC) $< $(CFLAGS) -c -o $@

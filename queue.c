@@ -1,4 +1,5 @@
 #include "huffman.h"
+#include "queue.h"
 
 /* Return the size of the queue. */
 uint32_t queue_size(struct node *head) {

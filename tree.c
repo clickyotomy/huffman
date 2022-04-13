@@ -1,4 +1,7 @@
-#include "huffman.h"
+#include <assert.h>
+#include <malloc.h>
+#include "tree.h"
+#include "queue.h"
 
 /* Return the height of the tree. */
 uint32_t tree_height(struct node *root) {
