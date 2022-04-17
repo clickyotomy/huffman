@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#define SUBSEQ_LENGTH 50
+#define SUBSEQ_LENGTH (5000)
 #define updivide(x, y) (((x) + ((y)-1))/(y))
 #define THREADS_PER_BLOCK (64)
 
