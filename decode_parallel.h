@@ -10,6 +10,7 @@
 typedef struct sync_point {
     int last_word_bit;
     int num_symbols;
+    int out_pos;
     bool sync;
 } sync_point_t;
 
