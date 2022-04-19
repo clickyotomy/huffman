@@ -362,6 +362,9 @@ int phase3(sync_point_t *sync_points, size_t num_subsequences, size_t num_sequen
     phase3_copy_to_sync_points<<<num_sequences, THREADS_PER_BLOCK>>>(num_subsequences, sync_points, num_symbols);
     int total_num_chars;
     cudaMemcpy(&total_num_chars, num_symbols + (num_subsequences - 1), sizeof(int), cudaMemcpyDeviceToHost);
+    sync_point_t last_sync_point;
+    cudaMemcpy(&last_sync_point, sync_points + (num_subsequences - 1), sizeof(sync_point_t), cudaMemcpyDeviceToHost);
+    total_num_chars += last_sync_point.num_symbols;
     cudaFree(num_symbols);
     return total_num_chars;
 }
@@ -394,7 +397,7 @@ __global__ void phase4_decode_write_output(uint64_t total_nr_bits, uint64_t tota
 
 
 /* We assume that the decode_table and bit_string is malloc-ed in cuda */
-void decode_cuda(uint64_t total_nr_bits, const char *bit_string, tree_arr_node_t *decode_table) {
+void decode_cuda(uint64_t total_nr_bits, const char *bit_string, tree_arr_node_t *decode_table, FILE *ofile) {
 
     printf("total_nr_bits %d\n", total_nr_bits);
     size_t num_subseq = updivide(total_nr_bits, SUBSEQ_LENGTH);
@@ -447,7 +450,7 @@ void decode_cuda(uint64_t total_nr_bits, const char *bit_string, tree_arr_node_t
     char *output_buf_host = (char *) calloc(total_num_chars + 1, sizeof(char));
     cudaMemcpy(output_buf_host, output_buf_device, total_num_chars * sizeof(char), cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
-    printf("%s", output_buf_host);
+    fwrite(output_buf_host, 1, total_num_chars, ofile);
 
 }
 

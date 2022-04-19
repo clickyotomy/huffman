@@ -320,7 +320,7 @@ int main(int argc, char *argv[]) {
         /* Decode the file and write to the output file. */
 //        nr_bytes = decode(ifile, fmeta.nr_bytes, head, ofile);
         char *bit_string = get_bit_string_device(ifile, fmeta.nr_bits);
-        decode_cuda(fmeta.nr_bits, bit_string, tree_arr);
+        decode_cuda(fmeta.nr_bits, bit_string, tree_arr, ofile);
     }
 
     nuke_tree(&head);

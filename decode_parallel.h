@@ -25,6 +25,6 @@ char * get_bit_string_device(FILE *ifile, uint64_t rd_bits);
 tree_arr_node_t *make_tree_device(struct node *head, uint32_t tree_depth);
 
 /* We assume that the decode_table and bit_string is malloc-ed in cuda */
-void decode_cuda(uint64_t total_nr_bits, const char *bit_string, tree_arr_node_t *decode_table);
+void decode_cuda(uint64_t total_nr_bits, const char *bit_string, tree_arr_node_t *decode_table, FILE *ofile);
 
 #endif /* DEFINE __DECODE_PARALLEL_H__ */
