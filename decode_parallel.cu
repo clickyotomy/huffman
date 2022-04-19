@@ -80,7 +80,7 @@ bool is_tree_arr_leaf(tree_arr_node_t *arr) {
 #define UNIT_SIZE 8
 __device__ __inline__
 uint64_t decode_one_symb(uint64_t bit_offset,  tree_arr_node_t *decode_root, const char *bits, uint64_t end_bit_offset,
-                         char *c, bool print) {
+                         char *c){
 
     uint64_t cur_bit_offset = bit_offset;
     int i = 1;
@@ -89,16 +89,13 @@ uint64_t decode_one_symb(uint64_t bit_offset,  tree_arr_node_t *decode_root, con
         uint64_t cur_bit_in_unit = (UNIT_SIZE - 1) - (cur_bit_offset % UNIT_SIZE);
         uint64_t cur_bit = (bits[cur_unit] & (0x1U << cur_bit_in_unit));
         /* Determine which branch to take depending on the extracted bit. */
-        i = cur_bit ? 2 * i : 2 * i + 1;
+        i = cur_bit ? 2 * i + 1: 2 * i;
 
         /*
          * If we reached the leaf node, we have decoded a byte;
          * write it to the output file.
          */
         if (is_tree_arr_leaf(decode_root + i)) {
-//            if (print) {
-//                printf("%d %c\n", i, decode_root[i].ch);
-//            }
             *c = decode_root[i].ch;
             /* Let's skip out on the writing first */
 //            fputc(branch->data.ch, ofile);
@@ -108,12 +105,12 @@ uint64_t decode_one_symb(uint64_t bit_offset,  tree_arr_node_t *decode_root, con
         cur_bit_offset++;
     }
 
-    return cur_bit_offset - bit_offset;
+    return cur_bit_offset - bit_offset + 1;
 }
 
 __device__ __inline__
 void decode_subsequence_write(tree_arr_node_t *decode_tree, const char *bit_string, uint64_t subseq_start, uint64_t total_nr_bits,
-                        int *out_num_symbols, uint64_t *out_last_offset, bool print, char *output) {
+                        int *out_num_symbols, uint64_t *out_last_offset, char *output) {
 
     /* start decoding from the start of the subsequence */
     uint64_t offset = subseq_start;
@@ -125,7 +122,7 @@ void decode_subsequence_write(tree_arr_node_t *decode_tree, const char *bit_stri
 
     while (offset < subseq_end) {
         char c;
-        uint64_t num_bits = decode_one_symb(offset,  decode_tree, bit_string, total_nr_bits, &c, print);
+        uint64_t num_bits = decode_one_symb(offset,  decode_tree, bit_string, total_nr_bits, &c);
         output[out_pos] = c;
         offset += num_bits;
         prev_num_bits = num_bits;
@@ -151,7 +148,10 @@ void decode_subsequence(tree_arr_node_t *decode_tree, const char *bit_string, ui
 
     while (offset < subseq_end) {
         char c;
-        uint64_t num_bits = decode_one_symb(offset,  decode_tree, bit_string, total_nr_bits, &c, print);
+        uint64_t num_bits = decode_one_symb(offset,  decode_tree, bit_string, total_nr_bits, &c);
+        if (print) {
+            printf("%c\n", c);
+        }
         offset += num_bits;
         prev_num_bits = num_bits;
         num_symbols++;
@@ -388,9 +388,10 @@ __global__ void phase4_decode_write_output(uint64_t total_nr_bits, uint64_t tota
         uint64_t last_word_bit;
         int num_symbols;
         decode_subsequence_write(decode_tree, bit_string, cur_pos, total_nr_bits, &num_symbols, &last_word_bit,
-                           false, output_buf + out_pos);
+                           output_buf + out_pos);
     }
 }
+
 
 /* We assume that the decode_table and bit_string is malloc-ed in cuda */
 void decode_cuda(uint64_t total_nr_bits, const char *bit_string, tree_arr_node_t *decode_table) {
@@ -449,3 +450,4 @@ void decode_cuda(uint64_t total_nr_bits, const char *bit_string, tree_arr_node_t
     printf("%s", output_buf_host);
 
 }
+
