@@ -2,6 +2,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <driver_functions.h>
+#include <thrust/scan.h>
+#include <thrust/device_ptr.h>
 
 #include "decode_parallel.h"
 #include "queue.h"
@@ -115,7 +117,7 @@ void decode_subsequence_write(tree_arr_node_t *decode_tree, const char *bit_stri
     /* start decoding from the start of the subsequence */
     uint64_t offset = subseq_start;
     uint64_t subseq_end = offset + SUBSEQ_LENGTH;
-    subseq_end = subseq_end < total_nr_bits ? subseq_end : total_nr_bits;
+    subseq_end = subseq_end < total_nr_bits ? subseq_end : total_nr_bits - 1;
     uint64_t prev_num_bits = 0;
     int num_symbols = 0;
     int out_pos = 0;
@@ -358,7 +360,10 @@ int phase3(sync_point_t *sync_points, size_t num_subsequences, size_t num_sequen
     int *num_symbols;
     cudaMalloc((void **)&num_symbols, num_subsequences * sizeof(int));
     phase3_copy_to_num_symbols<<<num_sequences, THREADS_PER_BLOCK>>>(num_subsequences, sync_points, num_symbols);
-    exclusive_scan(num_symbols, num_subsequences);
+    thrust::device_ptr<int> dev_ptr = thrust::device_pointer_cast(num_symbols);
+    // exclusive_scan(num_symbols, num_subsequences);
+    // thrust::device_ptr<int> dev_ptr(num_symbols);
+    thrust::exclusive_scan(dev_ptr, dev_ptr + num_subsequences, dev_ptr);
     phase3_copy_to_sync_points<<<num_sequences, THREADS_PER_BLOCK>>>(num_subsequences, sync_points, num_symbols);
     int total_num_chars;
     cudaMemcpy(&total_num_chars, num_symbols + (num_subsequences - 1), sizeof(int), cudaMemcpyDeviceToHost);
@@ -453,4 +458,3 @@ void decode_cuda(uint64_t total_nr_bits, const char *bit_string, tree_arr_node_t
     fwrite(output_buf_host, 1, total_num_chars, ofile);
 
 }
-

@@ -220,8 +220,8 @@ int main(int argc, char *argv[]) {
     struct node *head = NULL;
     struct map *fmap = NULL;
     struct meta fmeta = {0, 0, 0, 0};
-    FILE *ifile, *ofile;
-    char *ifpath, *ofpath;
+    FILE *ifile = NULL, *ofile = NULL;
+    char *ifpath = NULL, *ofpath = NULL;
     int16_t arg, enc = 1;
 
     while ((arg = getopt(argc, argv, "edi:o:h?")) > 0) {
