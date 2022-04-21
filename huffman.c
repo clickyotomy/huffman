@@ -186,7 +186,6 @@ void decode(FILE *ifile, uint64_t nr_en_bytes, struct node *root, FILE *ofile,
                 break;
 
             fputc(branch->data.ch, ofile);
-            printf("byte: %hhx\n", branch->data.ch);
             nr_wbytes++;
 
             /* Reset the branch to the root for the next byte. */
@@ -222,8 +221,8 @@ int main(int argc, char *argv[]) {
     uint32_t map_sz;
     uint64_t nr_rbytes, nr_wbytes;
     int16_t arg, enc = 1;
-    char *ifpath, *ofpath;
-    FILE *ifile, *ofile;
+    char *ifpath = NULL, *ofpath = NULL;
+    FILE *ifile = NULL, *ofile = NULL;
 
     struct node *head = NULL;
     struct map *fmap = NULL;
