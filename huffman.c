@@ -11,6 +11,7 @@ void prog_usage(const char *prog) {
            "ARGUMENTS\n"
            "  -e  encode (default operation)\n"
            "  -d  decode\n"
+           "  -p  parallel decode\n"
            "  -i  input file path\n"
            "  -o  output file path\n"
            "  -h  display program usage\n",
