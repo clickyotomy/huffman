@@ -1,5 +1,50 @@
 #include "huffman.h"
 
+static uint16_t tree_arr_lt_idx(uint16_t i) {
+    return (i << 2) + 1;
+}
+
+static uint16_t tree_arr_rt_idx(uint16_t i) {
+    return (i << 2) + 2;
+}
+
+static uint8_t tree_arr_lt(uint16_t i, uint16_t arr, uint16_t max, uint8_t *ch) {
+    uint16_t tmp;
+
+    tmp = tree_arr_lt_idx(i);
+    if (tmp < max) {
+        if (ch)
+            *ch = arr[tmp];
+        return 1;
+    }
+
+    return 0;
+}
+
+static uint8_t tree_arr_rt(uint16_t i, uint16_t arr, uint16_t max, uint8_t *ch) {
+    uint16_t tmp;
+
+    tmp = tree_arr_rt_idx(i);
+    if (tmp < max) {
+        if (ch)
+            *ch = arr[tmp];
+        return 1;
+    }
+
+    return 0;
+}
+
+static uint8_t tree_arr_leaf(uint16_t tree_arr, uint16_t idx, uint16_t max_off) {
+    assert(node);
+
+    uint8_t lt = 0, rt = 0, lt_ch, rt_ch;
+
+    lt = tree_arr_lt(idx, tree_arr, max_off, &lt_ch);
+    rt = tree_arr_rt(idx, tree_arr, max_off, &rt_ch);
+
+    return (lt == 0 && rt == 0);
+}
+
 /* Return the height of the tree. */
 uint32_t tree_height(struct node *root) {
     uint32_t lh, rh;
@@ -46,6 +91,29 @@ void traverse_tree(uint8_t ch, struct node *root, int8_t off, uint8_t *arr,
         arr[off] = 1;
         traverse_tree(ch, root->right, off + 1, arr, ret);
     }
+}
+
+void traverse_tree_arr(uint8_t ch, uint8_t *root, uint16_t max_tree_off,
+                       uint16_t tree_off, int8_t off, uint8_t *arr,
+                       int8_t *ret) {
+    assert(tree_arr);
+
+    if (tree_arr_leaf(root, toff, max_tree_off) && root[toff] == ch) {
+        *ret = off;
+        return;
+    }
+
+    if (*ret < 0 && tree_arr_lt(toff, root, max_off, NULL)) {
+        arr[off] = 0;
+        traverse_tree_arr(ch, root, max_tree_off,
+                          tree_arr_lt_idx(toff), off + 1, arr, ret);
+    }
+
+    if (*ret < 0 && tree_arr_rt(toff, root, max_off, NULL)) {
+        arr[off] = 1;
+        traverse_tree_arr(ch, root, max_tree_off,
+                          tree_arr_rt_idx(toff), off + 1, arr, ret);
+    }    
 }
 
 /*
@@ -170,7 +238,7 @@ uint8_t *encode_tree(struct node *root, uint16_t *eoff, uint8_t *esh) {
 
     /*
      * Shift any leftover bits to the left. Since the byte is read
-     * from the right (during inflation), we want theencoded values 
+     * from the right (during inflation), we want theencoded values
      * to be there.
      */
     if (sh && (sh < MAX_INT_BUF_BITS)) {
@@ -194,23 +262,21 @@ uint8_t *encode_tree(struct node *root, uint16_t *eoff, uint8_t *esh) {
  */
 static struct node *inflate_tree(uint8_t *buf, uint16_t eoff, uint8_t esh,
                                  uint16_t *doff, uint8_t *dsh) {
-    uint8_t last = 0, sh = MAX_INT_BUF_BITS, bit, mask, i;
+    uint8_t sh = MAX_INT_BUF_BITS, bit, mask, i;
     struct node *n;
+
+    /* No more bytes left to decode. */
+    if (*doff >= eoff)
+        return NULL;
 
     n = calloc(1, sizeof(struct node));
     assert(n);
 
     mask = 0x1U << (MAX_INT_BUF_BITS - 1);
 
-    /* No more bytes left to decode. */
-    if (*doff >= eoff)
-        return NULL;
-
     /* Only read the leftover bits, for the last byte. */
-    if (*doff == (eoff - 1)) {
+    if (*doff == (eoff - 1))
         sh = esh;
-        last = 1;
-    }
 
     bit = ((buf[*doff] << *dsh) & mask) > 0;
     *doff += tree_buff_off_incr(dsh);

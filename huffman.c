@@ -1,4 +1,5 @@
 #include "huffman.h"
+#include "parallel.h"
 
 /* Print program usage. */
 void prog_usage(const char *prog) {
@@ -8,6 +9,7 @@ void prog_usage(const char *prog) {
            "ARGUMENTS\n"
            "  -e  encode (default operation)\n"
            "  -d  decode\n"
+           "  -p  decode in parallel\n"
            "  -i  input file path\n"
            "  -o  output file path\n"
            "  -h  display program usage\n",
@@ -41,7 +43,7 @@ int8_t huffman_code(uint8_t ch, struct node *root, uint8_t *arr) {
  */
 void encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *nr_rd_bytes,
             uint64_t *nr_wr_bytes) {
-    uint8_t shift = 0, *arr, chunk, code;
+    uint8_t shift = 0, code = 0, *arr, chunk;
     uint32_t th;
     uint64_t nr_rbytes = 0, nr_wbytes = 0;
     int8_t i, off;
@@ -220,7 +222,7 @@ int main(int argc, char *argv[]) {
     uint8_t *tbuf = NULL;
     uint32_t map_sz;
     uint64_t nr_rbytes, nr_wbytes;
-    int16_t arg, enc = 1;
+    int16_t arg, enc = 1, dev = 0;
     char *ifpath = NULL, *ofpath = NULL;
     FILE *ifile = NULL, *ofile = NULL;
 
@@ -228,7 +230,7 @@ int main(int argc, char *argv[]) {
     struct map *fmap = NULL;
     struct meta fmeta = {0, 0, 0, 0};
 
-    while ((arg = getopt(argc, argv, "edi:o:h?")) > 0) {
+    while ((arg = getopt(argc, argv, "edpi:o:h?")) > 0) {
         switch (arg) {
         case 'e':
             enc = 1;
@@ -241,6 +243,9 @@ int main(int argc, char *argv[]) {
             break;
         case 'o':
             ofpath = optarg;
+            break;
+        case 'p':
+            dev = 1;
             break;
         case 'h':
         case '?':
@@ -306,18 +311,30 @@ int main(int argc, char *argv[]) {
 
         /* Read the file headers. */
         fread(&fmeta, sizeof(struct meta), 1, ifile);
-        assert(fmeta.nr_tree_bytes > 0);
-        assert(fmeta.nr_src_bytes >= 0);
-        assert(fmeta.nr_enc_bytes >= 0);
+        // assert(fmeta.nr_tree_bytes > 0);
+        // assert(fmeta.nr_src_bytes >= 0);
+        // assert(fmeta.nr_enc_bytes >= 0);
 
-        /* Read the tree from file into a temporary buffer and inflate it. */
-        tbuf = calloc(fmeta.nr_tree_bytes, sizeof(uint8_t));
-        assert(tbuf);
-        fread(tbuf, sizeof(uint8_t), fmeta.nr_tree_bytes, ifile);
-        head = decode_tree(tbuf, fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
+        if (dev) {
+            dev_trampoline(ifile, &fmeta, ofile, &nr_rbytes, &nr_wbytes);
+        } else {
+            /*
+             * Read the tree from file into a temporary
+             * buffer and inflate it.
+             */
+            tbuf = calloc(fmeta.nr_tree_bytes, sizeof(uint8_t));
+            assert(tbuf);
+            fread(tbuf, sizeof(uint8_t), fmeta.nr_tree_bytes, ifile);
+            for (int i = 0; i <  fmeta.nr_tree_bytes; i++) {
+                printf("tbuf[%d]: 0x%hhx\n", i, tbuf[i]);
+            }
 
-        /* Decode the file and write to the output file. */
-        decode(ifile, fmeta.nr_enc_bytes, head, ofile, &nr_rbytes, &nr_wbytes);
+            head = decode_tree(tbuf, fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
+
+            /* Decode the file and write to the output file. */
+            decode(ifile, fmeta.nr_enc_bytes, head, ofile, &nr_rbytes,
+                   &nr_wbytes);
+        }
 
         /* Check if the decode was successful. */
         assert(fmeta.nr_enc_bytes == nr_rbytes);
