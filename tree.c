@@ -1,7 +1,7 @@
-#include <assert.h>
-#include <malloc.h>
 #include "tree.h"
 #include "queue.h"
+#include <assert.h>
+#include <malloc.h>
 
 /* Return the height of the tree. */
 uint32_t tree_height(struct node *root) {
@@ -69,7 +69,7 @@ void make_tree(struct node **head) {
     while (queue_size(*head) > 1) {
         lt = dequeue(head);
         rt = dequeue(head);
-        up = (struct node *) calloc(1, sizeof(struct node));
+        up = (struct node *)calloc(1, sizeof(struct node));
 
         up->data.ch = PSEUDO_TREE_BYTE;
         up->data.ch = 0;

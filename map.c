@@ -29,7 +29,7 @@ uint32_t *make_table(FILE *fp) {
 
     assert(fp);
 
-    tab = (uint32_t *) calloc(MAX_HIST_TAB_LEN, sizeof(uint32_t));
+    tab = (uint32_t *)calloc(MAX_HIST_TAB_LEN, sizeof(uint32_t));
     assert(tab);
 
     /* There should be only one pseudo-EOF byte in the table. */
@@ -59,7 +59,7 @@ struct map *make_map(FILE *fp, uint32_t *ret) {
     assert(tab);
 
     map_sz = table_size(tab);
-    fmap = (map *) calloc(map_sz, sizeof(struct map));
+    fmap = (map *)calloc(map_sz, sizeof(struct map));
     assert(fmap);
 
     j = 0;

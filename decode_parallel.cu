@@ -9,15 +9,6 @@
 #include "queue.h"
 #include "tree.h"
 
-/*
- * Division modulo operations are awfully slow in CUDA.
- * This is a handy trick if "b" is a power of 2.
- * Ref: https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html,
- *      under "Division Modulo Operations"
- */
-#define MOD(a, b) ((a) & (b)-1)
-
-
 /* Bit string is on the device */
 char * get_bit_string_device(FILE *ifile, uint64_t rd_bits) {
     assert(ifile);
@@ -57,7 +48,7 @@ tree_arr_node_t *make_tree_device(struct node *head, uint32_t tree_depth) {
     uint64_t array_size = 0x1U << (tree_depth);
 
     tree_arr_node_t * tree_arr_host = (tree_arr_node_t *) calloc(array_size, sizeof(tree_arr_node_t ));
-    printf("size: %d\n", array_size);
+    // printf("size: %d\n", array_size);
     make_tree_arr_helper(tree_arr_host, head, 1);
 
     tree_arr_node_t * tree_arr_device;
@@ -151,9 +142,9 @@ void decode_subsequence(tree_arr_node_t *decode_tree, const char *bit_string, ui
     while (offset < subseq_end) {
         char c;
         uint64_t num_bits = decode_one_symb(offset,  decode_tree, bit_string, total_nr_bits, &c);
-        if (print) {
-            printf("%c\n", c);
-        }
+        // if (print) {
+        //     printf("%c\n", c);
+        // }
         offset += num_bits;
         prev_num_bits = num_bits;
         num_symbols++;
@@ -274,63 +265,6 @@ __global__ void phase2_synchronise_blocks(
     }
 }
 
-/*
- * Helper function to round up to a power of 2.
- */
-static inline int nextPow2(int n) {
-    n--;
-    n |= n >> 1;
-    n |= n >> 2;
-    n |= n >> 4;
-    n |= n >> 8;
-    n |= n >> 16;
-    n++;
-    return n;
-}
-
-/* Do the {up,down}-sweep inner loops of "exclusive_sum". */
-__global__ void kern_sweep(bool up, int N, int twod, int twod1, int *data) {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-
-    /* Equivalent to "i += twod1" from the loop in the sequential version. */
-    if (index < N && (MOD(index, twod1) == 0)) {
-        /* The "up-sweep" part. */
-        if (up) {
-            data[index + twod1 - 1] += data[index + twod - 1];
-            return;
-        }
-
-        /* The "down-sweep" part. */
-        int tmp = data[index + twod - 1];
-        data[index + twod - 1] = data[index + twod1 - 1];
-        data[index + twod1 - 1] += tmp;
-    }
-}
-
-/* Set the element at the last index to 0. */
-__global__ void kern_zero(int N, int *data) { data[N - 1] = 0; }
-
-void exclusive_scan(int *device_data, int length) {
-    int blocks, N;
-
-    N = nextPow2(length);
-    blocks = (N + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
-
-    for (int twod = 1; twod < N; twod *= 2) {
-        int twod1 = twod * 2;
-        kern_sweep<<<blocks, THREADS_PER_BLOCK>>>(true, N, twod, twod1,
-                                                device_data);
-    }
-
-    kern_zero<<<1, 1>>>(N, device_data);
-
-    for (int twod = (N / 2); twod >= 1; twod /= 2) {
-        int twod1 = twod * 2;
-        kern_sweep<<<blocks, THREADS_PER_BLOCK>>>(false, N, twod, twod1,
-                                                device_data);
-    }
-}
-
 __global__ void phase3_copy_to_num_symbols(
         uint64_t total_num_subsequences,
         const sync_point_t *sync_points,
@@ -361,8 +295,6 @@ int phase3(sync_point_t *sync_points, size_t num_subsequences, size_t num_sequen
     cudaMalloc((void **)&num_symbols, num_subsequences * sizeof(int));
     phase3_copy_to_num_symbols<<<num_sequences, THREADS_PER_BLOCK>>>(num_subsequences, sync_points, num_symbols);
     thrust::device_ptr<int> dev_ptr = thrust::device_pointer_cast(num_symbols);
-    // exclusive_scan(num_symbols, num_subsequences);
-    // thrust::device_ptr<int> dev_ptr(num_symbols);
     thrust::exclusive_scan(dev_ptr, dev_ptr + num_subsequences, dev_ptr);
     phase3_copy_to_sync_points<<<num_sequences, THREADS_PER_BLOCK>>>(num_subsequences, sync_points, num_symbols);
     int total_num_chars;
@@ -403,58 +335,90 @@ __global__ void phase4_decode_write_output(uint64_t total_nr_bits, uint64_t tota
 
 /* We assume that the decode_table and bit_string is malloc-ed in cuda */
 void decode_cuda(uint64_t total_nr_bits, const char *bit_string, tree_arr_node_t *decode_table, FILE *ofile) {
-
-    printf("total_nr_bits %d\n", total_nr_bits);
+    // printf("total_nr_bits %d\n", total_nr_bits);
     size_t num_subseq = updivide(total_nr_bits, SUBSEQ_LENGTH);
     size_t num_sequences = updivide(num_subseq, THREADS_PER_BLOCK);
+    float p1, p2, p3;
+    cudaEvent_t start, stop;
+    
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
 
     /* Phase 1 */
     sync_point_t *sync_points;
     cudaMalloc((void **)&sync_points, num_subseq * sizeof(sync_point_t));
 
-    phase1_decode_subseq<<<num_sequences, THREADS_PER_BLOCK>>>(total_nr_bits, num_subseq, bit_string, decode_table, sync_points);
+    cudaEventRecord(start);
+    phase1_decode_subseq<<<num_sequences, THREADS_PER_BLOCK>>>(
+        total_nr_bits, num_subseq, bit_string, decode_table, sync_points);
     cudaDeviceSynchronize();
 
-    printf("creating blocks\n");
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&p1, start, stop);
+
+    // printf("creating blocks\n");
+
     /* Phase 2 */
     bool blocks_synchronized = false;
     bool *sequences_sync_device;
     cudaMalloc((void **)&sequences_sync_device, num_sequences * sizeof(bool));
 
     bool *sequences_sync_host = (bool *)calloc(num_sequences, sizeof(bool));
-    while (!blocks_synchronized){
-        phase2_synchronise_blocks<<<num_sequences, THREADS_PER_BLOCK>>>(total_nr_bits, num_subseq, num_sequences, bit_string, decode_table,
-                                                                        sync_points, sequences_sync_device);
+
+    cudaEventRecord(start);
+    while (!blocks_synchronized) {
+        phase2_synchronise_blocks<<<num_sequences, THREADS_PER_BLOCK>>>(
+            total_nr_bits, num_subseq, num_sequences, bit_string, decode_table,
+            sync_points, sequences_sync_device);
         cudaDeviceSynchronize();
-        cudaMemcpy(sequences_sync_host, sequences_sync_device, num_sequences * sizeof(bool), cudaMemcpyDeviceToHost);
+
+        cudaMemcpy(sequences_sync_host, sequences_sync_device,
+                   num_sequences * sizeof(bool), cudaMemcpyDeviceToHost);
         const size_t num_blocks = num_sequences - 1;
+
         blocks_synchronized = true;
-        for(size_t i = 1; i < num_blocks; i++) {
-            if (i % 100 == 0) {
-               printf("i: %d\n", i);
-            }
-            if(sequences_sync_host[i] == 0) {
+        for (size_t i = 1; i < num_blocks; i++) {
+            // if (i % 100 == 0) {
+            //     printf("i: %d\n", i);
+            // }
+            if (sequences_sync_host[i] == 0) {
                 blocks_synchronized = false;
                 break;
             }
         }
     }
+
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&p2, start, stop);
+
+
     free(sequences_sync_host);
-    printf("Exclusive scan\n");
+    // printf("Exclusive scan\n");
 
     /* Exclusive scan to get total number of symbols */
+    cudaEventRecord(start);
     int total_num_chars = phase3(sync_points, num_subseq, num_sequences);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&p3, start, stop);
+
     char *output_buf_device;
     cudaMalloc((void **)&output_buf_device, total_num_chars * sizeof(char));
-    printf("total_num_chars: %d\n", total_num_chars);
+    // printf("total_num_chars: %d\n", total_num_chars);
+
+    printf("decode: %0.3fms {p1: %0.3fms, p2: %0.3fms, p3: %0.3fms}\n",
+            p1 + p2 + p3, p1, p2, p3);
 
     /* Write into output */
     phase4_decode_write_output<<<num_sequences, THREADS_PER_BLOCK>>>(
-            total_nr_bits, num_subseq, bit_string, decode_table, sync_points, output_buf_device);
+        total_nr_bits, num_subseq, bit_string, decode_table, sync_points,
+        output_buf_device);
 
-    char *output_buf_host = (char *) calloc(total_num_chars + 1, sizeof(char));
-    cudaMemcpy(output_buf_host, output_buf_device, total_num_chars * sizeof(char), cudaMemcpyDeviceToHost);
+    char *output_buf_host = (char *)calloc(total_num_chars + 1, sizeof(char));
+    cudaMemcpy(output_buf_host, output_buf_device,
+               total_num_chars * sizeof(char), cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
     fwrite(output_buf_host, 1, total_num_chars, ofile);
-
 }

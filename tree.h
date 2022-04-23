@@ -11,7 +11,6 @@
  */
 #define PSEUDO_TREE_BYTE (MAX_HIST_TAB_LEN - 0x1U)
 
-
 /* Maps a character to its frequency in the data. */
 typedef struct map {
     uint8_t ch;
@@ -30,7 +29,8 @@ typedef struct node {
 uint32_t tree_height(struct node *root);
 /* Return true if the node is the leaf of a tree. */
 uint8_t tree_leaf(struct node *node);
-void traverse_tree(uint8_t ch, struct node *root, int8_t off, uint8_t *arr, int8_t *ret);
+void traverse_tree(uint8_t ch, struct node *root, int8_t off, uint8_t *arr,
+                   int8_t *ret);
 void make_tree(struct node **head);
 void nuke_tree(struct node **root);
 

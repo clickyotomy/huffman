@@ -12,11 +12,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include <time.h>
 
 /* Maximum size of a encoded (or decoded) byte. */
 #define MAX_INT_BUF_BITS (0x8U)
-
 
 /*
  * Denotes the end of file (EOF) for our encoding or
@@ -26,10 +25,10 @@
 
 /* Stores the metadata for the encoded file/ */
 typedef struct meta {
-    uint32_t map_sz;   /* Size of the map. */
+    uint32_t map_sz;     /* Size of the map. */
     uint32_t tree_depth; /* Height of the decode tree */
-    uint64_t nr_bytes; /* Number of encoded bytes (excluding headers). */
-    uint64_t nr_bits; /* Number of encoded bits (excluding headers). */
+    uint64_t nr_bytes;   /* Number of encoded bytes (excluding headers). */
+    uint64_t nr_bits;    /* Number of encoded bits (excluding headers). */
 } meta_t;
 
 /* Routines for maps. */

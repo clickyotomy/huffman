@@ -19,8 +19,11 @@ PERF_STAT   = perf stat $(PERF_ARGS)
 RAND_QMIN   = 1024	  # 1 byte.
 RAND_QMAX   = 2048 # 128 bytes.
 RAND_QAWK   = BEGIN{ srand(); print int(rand()*($(RAND_QMAX)-$(RAND_QMIN))+$(RAND_QMIN)) }
-RAND_FMIN   ?= 1024       # 1 kB.
-RAND_FMAX   ?= 4294967296 # 4 * 1024 * 1024 * 1024 bytes (~4GB).
+# RAND_FMIN   ?= 1024       # 1 kB.
+# RAND_FMAX   ?= 4294967296 # 4 * 1024 * 1024 * 1024 bytes (~4GB).
+
+RAND_FMIN   ?= 1048576    # 1MB.
+RAND_FMAX   ?= 536870912  # 512MB.
 RAND_FAWK   = BEGIN{ srand(); print int(rand()*($(RAND_FMAX)-$(RAND_FMIN))+$(RAND_FMIN)) }
 
 default: $(PROG_NAME)
@@ -36,17 +39,15 @@ $(PROG_NAME): $(OBJS)
 
 
 format:
-	$(FMT) *.c *.h
+	$(FMT) *.c *.cu *.h
 
 
 test: default
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) /usr/bin/time ./$(PROG_NAME) -e -i test/shakespeare.txt -o shakespeare.enc
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) /usr/bin/time ./$(PROG_NAME) -d -i shakespeare.enc -o shakespeare.dec
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i test/shakespeare.txt -o shakespeare.enc
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i shakespeare.enc -o shakespeare.dec
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -p -i shakespeare.enc -o shakespeare.pdec
 
-	diff shakespeare.dec test/shakespeare.txt
-
-	wc -c shakespeare.enc
-	wc -c shakespeare.dec
+	diff test/shakespeare.txt shakespeare.dec
 
 
 test-qrand: default
@@ -55,21 +56,20 @@ test-qrand: default
 
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i rand.txt -o rand.enc
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i rand.enc -o rand.dec
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -p -i rand.enc -o rand.pdec
 
-	diff rand.dec rand.txt
+	diff rand.txt rand.dec
 
 
 test-frand: default
 	$(eval RAND_INT=$(shell awk '$(RAND_FAWK)'))
 	base64 /dev/urandom | head -c $(RAND_INT) >rand.txt
 
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) /usr/bin/time ./$(PROG_NAME) -e -i rand.txt -o rand.enc
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) /usr/bin/time ./$(PROG_NAME) -d -i rand.enc -o rand.dec
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i rand.txt -o rand.enc
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i rand.enc -o rand.dec
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -p -i rand.enc -o rand.pdec
 
-	diff rand.dec rand.txt
-
-	wc -c rand.enc
-	wc -c rand.dec
+	diff rand.txt rand.dec
 
 
 test-perf: default
@@ -83,11 +83,9 @@ mem-chk: default
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) $(VALGRIND) -- ./$(PROG_NAME) -e -i rand.txt -o rand.enc
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) $(VALGRIND) -- ./$(PROG_NAME) -d -i rand.enc -o rand.dec
 
-	diff rand.dec rand.txt
-
 
 clean:
-	/bin/rm -rf *~ *.o $(PROG_NAME) *.enc *.dec rand.*
+	/bin/rm -rf *~ *.o $(PROG_NAME) *.enc *.dec *.pdec rand.*
 
 
 .PHONY: init default format test test-qrand test-frand test-perf mem-chk clean

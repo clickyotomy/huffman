@@ -1,7 +1,7 @@
 #include "huffman.h"
 #include "decode_parallel.h"
-#include "tree.h"
 #include "queue.h"
+#include "tree.h"
 
 /* Print program usage. */
 void prog_usage(const char *prog) {
@@ -43,7 +43,8 @@ int8_t huffman_code(uint8_t ch, struct node *root, uint8_t *arr) {
  * are packed together until the size of a byte is reached.
  * The byte is then written to the output file.
  */
-uint64_t encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *out_nr_bits) {
+uint64_t encode(FILE *ifile, struct node *root, FILE *ofile,
+                uint64_t *out_nr_bits) {
     uint8_t *arr, shift, chunk;
     uint8_t code = 0;
     uint32_t th;
@@ -59,7 +60,7 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *out_nr_bi
     assert(th > 0);
 
     /* Temporary array to store the Huffman code. */
-    arr = (uint8_t *) calloc(th, sizeof(uint8_t));
+    arr = (uint8_t *)calloc(th, sizeof(uint8_t));
     shift = 0;
     uint64_t total_nr_bits = 0;
 
@@ -69,7 +70,7 @@ uint64_t encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *out_nr_bi
 
         /* Calculate the Huffman code. */
         off = huffman_code(chunk, root, arr);
-        total_nr_bits += (uint64_t) off;
+        total_nr_bits += (uint64_t)off;
         assert(off > 0);
 
         /*
@@ -222,15 +223,18 @@ int main(int argc, char *argv[]) {
     struct meta fmeta = {0, 0, 0, 0};
     FILE *ifile = NULL, *ofile = NULL;
     char *ifpath = NULL, *ofpath = NULL;
-    int16_t arg, enc = 1;
+    int16_t arg, enc = 1, cuda = 0;
 
-    while ((arg = getopt(argc, argv, "edi:o:h?")) > 0) {
+    while ((arg = getopt(argc, argv, "edpi:o:h?")) > 0) {
         switch (arg) {
         case 'e':
             enc = 1;
             break;
         case 'd':
             enc = 0;
+            break;
+        case 'p':
+            cuda = 1;
             break;
         case 'i':
             ifpath = optarg;
@@ -307,7 +311,7 @@ int main(int argc, char *argv[]) {
         fread(&fmeta, sizeof(struct meta), 1, ifile);
         assert(fmeta.map_sz > 0 && fmeta.nr_bytes > 0);
 
-        fmap = (map *) calloc(fmeta.map_sz, sizeof(struct map));
+        fmap = (map *)calloc(fmeta.map_sz, sizeof(struct map));
         for (i = 0; i < fmeta.map_sz; i++)
             fread(&fmap[i], sizeof(struct map), 1, ifile);
 
@@ -315,12 +319,22 @@ int main(int argc, char *argv[]) {
         head = make_queue(fmap, fmeta.map_sz);
         make_tree(&head);
 
-        tree_arr_node_t * tree_arr = make_tree_device(head, fmeta.tree_depth);
-
         /* Decode the file and write to the output file. */
-//        nr_bytes = decode(ifile, fmeta.nr_bytes, head, ofile);
-        char *bit_string = get_bit_string_device(ifile, fmeta.nr_bits);
-        decode_cuda(fmeta.nr_bits, bit_string, tree_arr, ofile);
+        if (cuda) {
+            tree_arr_node_t *tree_arr = make_tree_device(head, fmeta.tree_depth);
+            char *bit_string = get_bit_string_device(ifile, fmeta.nr_bits);
+            decode_cuda(fmeta.nr_bits, bit_string, tree_arr, ofile);
+        } else {
+            clock_t b, e;
+            double t;
+
+            b = clock();
+            decode(ifile, fmeta.nr_bytes, head, ofile);
+            e = clock() - b;
+            t = (double)e / CLOCKS_PER_SEC;
+
+            printf("decode: %0.3fms\n", t * 1000);
+        }
     }
 
     nuke_tree(&head);
