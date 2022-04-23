@@ -58,6 +58,14 @@ uint32_t tree_height(struct node *root) {
     return (lh > rh ? lh : rh) + 1;
 }
 
+/* Return the number of nodes in a tree. */
+uint32_t tree_nodes(struct node *root) {
+    if (!root)
+        return 0;
+
+    return 1 + tree_nodes(root->left) + tree_nodes(root->right);
+}
+
 /* Return true if the node is the leaf of a tree. */
 uint8_t tree_leaf(struct node *node) {
     assert(node);
@@ -149,6 +157,21 @@ void make_tree(struct node **head) {
             init_queue(head);
         }
     }
+}
+
+void make_tree_arr(struct node *root, uint8_t *buf, uint16_t off) {
+    assert(buf);
+
+    buf[off] = root->data.ch;
+
+    if (tree_leaf(root))
+        return;
+
+    if (root->left)
+        make_tree_arr(root, buf, max_off, tree_arr_lt_idx(off));
+
+    if (root->right)
+        make_tree_arr(root, buf, max_off, tree_arr_rt_idx(off));
 }
 
 /* Free all the nodes in the tree. */
@@ -311,4 +334,16 @@ struct node *decode_tree(uint8_t *buf, uint16_t eoff, uint8_t esh) {
     uint16_t doff = 0;
 
     return inflate_tree(buf, eoff, esh, &doff, &dsh);
+}
+
+/* Wrapper for tree array inflation. */
+struct node *decode_tree_arr(struct node *root) {
+    uint16_t nr_nodes;
+    uint8_t *buf;
+
+    nr_nodes = tree_nodes(root);
+    buf = calloc(nr_nodes, sizeof(uint8_t));
+    assert(buf);
+
+    make_tree_arr(root, buf, 0);
 }

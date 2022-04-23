@@ -143,7 +143,7 @@ void encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *nr_rd_bytes,
  * The resultant byte obtained from the tree traversal is written
  * to the output file.
  */
-void decode(FILE *ifile, uint64_t nr_en_bytes, struct node *root, FILE *ofile,
+void decode(FILE *ifile, uint64_t nr_en_bytes, uint8_t *root, FILE *ofile,
             uint64_t *nr_rd_bytes, uint64_t *nr_wr_bytes) {
     uint8_t shift = 0, chunk, mask;
     uint64_t nr_rbytes = 0, nr_wbytes = 0;
@@ -182,7 +182,7 @@ void decode(FILE *ifile, uint64_t nr_en_bytes, struct node *root, FILE *ofile,
          * If we reached the leaf node, we have decoded a byte;
          * write it to the output file.
          */
-        if (tree_leaf(branch)) {
+        if (tree_arr_leaf(branch)) {
             /* This marks the end of the decoded file. */
             if (branch->data.ch == PSEUDO_NULL_BYTE && nr_rbytes >= nr_en_bytes)
                 break;
@@ -222,7 +222,7 @@ int main(int argc, char *argv[]) {
     uint8_t *tbuf = NULL;
     uint32_t map_sz;
     uint64_t nr_rbytes, nr_wbytes;
-    int16_t arg, enc = 1, dev = 0;
+    int16_t arg, enc = 1, dev = 0, nr_nodes;
     char *ifpath = NULL, *ofpath = NULL;
     FILE *ifile = NULL, *ofile = NULL;
 
@@ -311,9 +311,9 @@ int main(int argc, char *argv[]) {
 
         /* Read the file headers. */
         fread(&fmeta, sizeof(struct meta), 1, ifile);
-        // assert(fmeta.nr_tree_bytes > 0);
-        // assert(fmeta.nr_src_bytes >= 0);
-        // assert(fmeta.nr_enc_bytes >= 0);
+        assert(fmeta.nr_tree_bytes > 0);
+        assert(fmeta.nr_src_bytes >= 0);
+        assert(fmeta.nr_enc_bytes >= 0);
 
         if (dev) {
             dev_trampoline(ifile, &fmeta, ofile, &nr_rbytes, &nr_wbytes);
@@ -330,9 +330,11 @@ int main(int argc, char *argv[]) {
             }
 
             head = decode_tree(tbuf, fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
+            tree_arr = decode_tree_arr(head);
+
 
             /* Decode the file and write to the output file. */
-            decode(ifile, fmeta.nr_enc_bytes, head, ofile, &nr_rbytes,
+            decode(ifile, fmeta.nr_enc_bytes, tree_arr, ofile, &nr_rbytes,
                    &nr_wbytes);
         }
 
