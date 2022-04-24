@@ -8,7 +8,7 @@ static uint16_t tree_arr_rt_idx(uint16_t i) {
     return (i << 2) + 2;
 }
 
-static uint8_t tree_arr_lt(uint16_t i, uint16_t arr, uint16_t max, uint8_t *ch) {
+static uint8_t tree_arr_lt(uint8_t *arr, uint16_t i, uint16_t max, uint8_t *ch) {
     uint16_t tmp;
 
     tmp = tree_arr_lt_idx(i);
@@ -21,7 +21,7 @@ static uint8_t tree_arr_lt(uint16_t i, uint16_t arr, uint16_t max, uint8_t *ch) 
     return 0;
 }
 
-static uint8_t tree_arr_rt(uint16_t i, uint16_t arr, uint16_t max, uint8_t *ch) {
+static uint8_t tree_arr_rt(uint8_t *arr, uint16_t i, uint16_t max, uint8_t *ch) {
     uint16_t tmp;
 
     tmp = tree_arr_rt_idx(i);
@@ -34,13 +34,13 @@ static uint8_t tree_arr_rt(uint16_t i, uint16_t arr, uint16_t max, uint8_t *ch) 
     return 0;
 }
 
-static uint8_t tree_arr_leaf(uint16_t tree_arr, uint16_t idx, uint16_t max_off) {
-    assert(node);
+static uint8_t tree_arr_leaf(uint8_t *tree_arr, uint16_t idx, uint16_t max_off) {
+    assert(tree_arr);
 
     uint8_t lt = 0, rt = 0, lt_ch, rt_ch;
 
-    lt = tree_arr_lt(idx, tree_arr, max_off, &lt_ch);
-    rt = tree_arr_rt(idx, tree_arr, max_off, &rt_ch);
+    lt = tree_arr_lt(tree_arr, idx, max_off, &lt_ch);
+    rt = tree_arr_rt(tree_arr, idx, max_off, &rt_ch);
 
     return (lt == 0 && rt == 0);
 }
@@ -104,23 +104,23 @@ void traverse_tree(uint8_t ch, struct node *root, int8_t off, uint8_t *arr,
 void traverse_tree_arr(uint8_t ch, uint8_t *root, uint16_t max_tree_off,
                        uint16_t tree_off, int8_t off, uint8_t *arr,
                        int8_t *ret) {
-    assert(tree_arr);
+    assert(arr);
 
-    if (tree_arr_leaf(root, toff, max_tree_off) && root[toff] == ch) {
+    if (tree_arr_leaf(root, tree_off, max_tree_off) && root[tree_off] == ch) {
         *ret = off;
         return;
     }
 
-    if (*ret < 0 && tree_arr_lt(toff, root, max_off, NULL)) {
+    if (*ret < 0 && tree_arr_lt(root, tree_off, max_tree_off, NULL)) {
         arr[off] = 0;
         traverse_tree_arr(ch, root, max_tree_off,
-                          tree_arr_lt_idx(toff), off + 1, arr, ret);
+                          tree_arr_lt_idx(tree_off), off + 1, arr, ret);
     }
 
-    if (*ret < 0 && tree_arr_rt(toff, root, max_off, NULL)) {
+    if (*ret < 0 && tree_arr_rt(root, tree_off, max_tree_off, NULL)) {
         arr[off] = 1;
         traverse_tree_arr(ch, root, max_tree_off,
-                          tree_arr_rt_idx(toff), off + 1, arr, ret);
+                          tree_arr_rt_idx(tree_off), off + 1, arr, ret);
     }    
 }
 
@@ -159,19 +159,21 @@ void make_tree(struct node **head) {
     }
 }
 
-void make_tree_arr(struct node *root, uint8_t *buf, uint16_t off) {
+void make_tree_arr(struct node *root, uint8_t *buf, uint16_t *max_off, uint16_t off) {
     assert(buf);
 
     buf[off] = root->data.ch;
+    if (off > *max_off)
+        *max_off = off;
 
     if (tree_leaf(root))
         return;
 
     if (root->left)
-        make_tree_arr(root, buf, max_off, tree_arr_lt_idx(off));
+        make_tree_arr(root->left, buf, max_off, tree_arr_lt_idx(off));
 
     if (root->right)
-        make_tree_arr(root, buf, max_off, tree_arr_rt_idx(off));
+        make_tree_arr(root->right, buf, max_off, tree_arr_rt_idx(off));
 }
 
 /* Free all the nodes in the tree. */
@@ -337,13 +339,19 @@ struct node *decode_tree(uint8_t *buf, uint16_t eoff, uint8_t esh) {
 }
 
 /* Wrapper for tree array inflation. */
-struct node *decode_tree_arr(struct node *root) {
-    uint16_t nr_nodes;
+uint16_t decode_tree_arr(struct node *root, uint8_t *arr) {
+    uint16_t off = 0;
     uint8_t *buf;
 
-    nr_nodes = tree_nodes(root);
-    buf = calloc(nr_nodes, sizeof(uint8_t));
+    buf = calloc(1024 * 1024 * 1024, sizeof(uint8_t));
     assert(buf);
 
-    make_tree_arr(root, buf, 0);
+    make_tree_arr(root, buf, &off, 0);
+
+    arr = calloc(off, sizeof(uint8_t));
+    assert(arr);
+
+    printf("off: %d\n", off);
+    memcpy(arr, buf, sizeof(uint8_t) * off);
+    return off;
 }

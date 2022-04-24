@@ -61,6 +61,7 @@ void make_tree(struct node **);
 void nuke_tree(struct node **);
 uint8_t *encode_tree(struct node *, uint16_t *, uint8_t *);
 struct node *decode_tree(uint8_t *, uint16_t, uint8_t);
+uint16_t decode_tree_arr(struct node *, uint8_t *);
 
 /* Routines for queues. */
 uint32_t queue_size(struct node *);

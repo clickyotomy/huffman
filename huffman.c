@@ -143,7 +143,7 @@ void encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *nr_rd_bytes,
  * The resultant byte obtained from the tree traversal is written
  * to the output file.
  */
-void decode(FILE *ifile, uint64_t nr_en_bytes, uint8_t *root, FILE *ofile,
+void decode(FILE *ifile, uint64_t nr_en_bytes, struct node *root, FILE *ofile,
             uint64_t *nr_rd_bytes, uint64_t *nr_wr_bytes) {
     uint8_t shift = 0, chunk, mask;
     uint64_t nr_rbytes = 0, nr_wbytes = 0;
@@ -182,12 +182,13 @@ void decode(FILE *ifile, uint64_t nr_en_bytes, uint8_t *root, FILE *ofile,
          * If we reached the leaf node, we have decoded a byte;
          * write it to the output file.
          */
-        if (tree_arr_leaf(branch)) {
+        if (tree_leaf(branch)) {
             /* This marks the end of the decoded file. */
             if (branch->data.ch == PSEUDO_NULL_BYTE && nr_rbytes >= nr_en_bytes)
                 break;
 
             fputc(branch->data.ch, ofile);
+            // printf("byte: %hhx\n", branch->data.ch);
             nr_wbytes++;
 
             /* Reset the branch to the root for the next byte. */
@@ -217,12 +218,13 @@ ret:
     *nr_wr_bytes = nr_wbytes;
 }
 
+
 /* All the things happen here. */
 int main(int argc, char *argv[]) {
-    uint8_t *tbuf = NULL;
+    uint8_t *tbuf = NULL, *tree_arr = NULL;
     uint32_t map_sz;
-    uint64_t nr_rbytes, nr_wbytes;
-    int16_t arg, enc = 1, dev = 0, nr_nodes;
+    uint64_t nr_rbytes = 0, nr_wbytes = 0;
+    int16_t arg, enc = 1, dev = 0, max_tree_off;
     char *ifpath = NULL, *ofpath = NULL;
     FILE *ifile = NULL, *ofile = NULL;
 
@@ -245,7 +247,7 @@ int main(int argc, char *argv[]) {
             ofpath = optarg;
             break;
         case 'p':
-            dev = 1;
+            dev = 0;
             break;
         case 'h':
         case '?':
@@ -316,7 +318,7 @@ int main(int argc, char *argv[]) {
         assert(fmeta.nr_enc_bytes >= 0);
 
         if (dev) {
-            dev_trampoline(ifile, &fmeta, ofile, &nr_rbytes, &nr_wbytes);
+            // dev_trampoline(ifile, &fmeta, ofile, &nr_rbytes, &nr_wbytes);
         } else {
             /*
              * Read the tree from file into a temporary
@@ -325,17 +327,19 @@ int main(int argc, char *argv[]) {
             tbuf = calloc(fmeta.nr_tree_bytes, sizeof(uint8_t));
             assert(tbuf);
             fread(tbuf, sizeof(uint8_t), fmeta.nr_tree_bytes, ifile);
-            for (int i = 0; i <  fmeta.nr_tree_bytes; i++) {
-                printf("tbuf[%d]: 0x%hhx\n", i, tbuf[i]);
-            }
 
             head = decode_tree(tbuf, fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
-            tree_arr = decode_tree_arr(head);
-
+            max_tree_off = decode_tree_arr(head, tree_arr);
+            printf("off: %d\n", max_tree_off);
+            for (int i = 0; i <  max_tree_off; i++) {
+                // if (tree_arr[i] < 128)
+                    printf("arr[%d]: %c\n", i, tree_arr[i]);
+            }
 
             /* Decode the file and write to the output file. */
-            decode(ifile, fmeta.nr_enc_bytes, tree_arr, ofile, &nr_rbytes,
-                   &nr_wbytes);
+            // decode(ifile, fmeta.nr_enc_bytes, tree_arr, ofile, &nr_rbytes,
+            //        &nr_wbytes);
+            decode(ifile, fmeta.nr_enc_bytes, head, ofile, &nr_rbytes, &nr_wbytes);
         }
 
         /* Check if the decode was successful. */
