@@ -4,14 +4,16 @@ A simple text-based Huffman encoder and decoder.
 
 
 USAGE
-	huffman (-e | -d) -i INPUT -o OUTPUT [-h]
+	huffman (-e | -d [-l -p]) -i INPUT -o OUTPUT [-h]
 
 ARGUMENTS
-	  -e  encode (default operation)
-	  -d  decode
-	  -i  input file path
-	  -o  output file path
-	  -h  display program usage
+	-e  encode (default operation)
+	-d  decode
+	-l  use look-up table
+	-p  parallel decoding
+	-i  input file path
+	-o  output file path
+	-h  display program usage
 
 BUILD
 	To build the binary ("huffman"), run:

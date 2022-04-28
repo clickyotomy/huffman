@@ -13,8 +13,8 @@ VALGRIND    = valgrind --leak-check=full --show-leak-kinds=all
 PERF_EVENTS = 'cache-references,cache-misses,cycles,instructions,branches,faults,migrations'
 PERF_ARGS   = -B -e $(PERF_EVENTS)
 PERF_STAT   = $(shell which clang) stat $(PERF_ARGS)
-RAND_QMIN   = 1    # 1 byte.
-RAND_QMAX   = 2048 # 128 bytes.
+RAND_QMIN   = 0    # 0 bytes.
+RAND_QMAX   = 128  # 128 bytes.
 RAND_QAWK   = BEGIN{ srand(); print int(rand()*($(RAND_QMAX)-$(RAND_QMIN))+$(RAND_QMIN)) }
 RAND_FMIN  ?= 1024       # 1 kB.
 RAND_FMAX  ?= 4294967296 # 4 * 1024 * 1024 * 1024 bytes (~4GB).
@@ -52,9 +52,16 @@ test-qrand: default
 	base64 /dev/urandom | head -c $(RAND_INT) >rand.txt
 
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i rand.txt -o rand.enc
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -p -i rand.enc -o rand.dec
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i rand.enc -o rand.dec
 
 	diff rand.dec rand.txt
+
+
+test-mars: default
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) /usr/bin/time ./$(PROG_NAME) -e -i test/mars.jpg -o mars.enc
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) /usr/bin/time ./$(PROG_NAME) -d -i mars.enc -o mars.dec
+
+	diff mars.dec test/mars.jpg
 
 
 test-frand: default
@@ -85,7 +92,7 @@ mem-chk: default
 
 
 clean:
-	/bin/rm -rf *~ *.o $(PROG_NAME) *.enc *.dec rand.*
+	/bin/rm -rf *~ *.o $(PROG_NAME) *.enc *.dec *.pdec rand.*
 
 
 .PHONY: default format test test-qrand test-frand test-perf mem-chk clean

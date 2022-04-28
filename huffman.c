@@ -3,13 +3,14 @@
 
 /* Print program usage. */
 void prog_usage(const char *prog) {
-    printf("huffman: A simple text-based Huffman {enc,dec}oder.\n\n"
+    printf("huffman: A simple text-based Huffman {en,de}coder.\n\n"
            "USAGE\n"
            "  %s (-e | -d) -i INPUT -o OUTPUT [-h]\n\n"
            "ARGUMENTS\n"
            "  -e  encode (default operation)\n"
            "  -d  decode\n"
-           "  -p  decode in parallel\n"
+           "  -l  use look-up table\n"
+           "  -p  parallel decoding\n"
            "  -i  input file path\n"
            "  -o  output file path\n"
            "  -h  display program usage\n",
@@ -20,17 +21,6 @@ void prog_usage(const char *prog) {
 void err_exit(const char *message) {
     perror(message);
     exit(EXIT_FAILURE);
-}
-
-/* Return the Huffman code for a given byte. */
-int8_t huffman_code(uint8_t ch, struct node *root, uint8_t *arr) {
-    assert(root);
-    assert(arr);
-
-    int8_t off = -1;
-    traverse_tree(ch, root, 0, arr, &off);
-
-    return off;
 }
 
 /*
@@ -60,6 +50,7 @@ void encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *nr_rd_bytes,
 
     /* Temporary array to store the Huffman code. */
     arr = calloc(th, sizeof(uint8_t));
+    assert(arr);
 
     while ((file_ch = fgetc(ifile)) != EOF) {
         /* Read a byte from the file. */
@@ -134,7 +125,7 @@ void encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *nr_rd_bytes,
  * value is the number of bytes decoded.
  *
  * This function should be called only after reading the file
- * headers (which contains the byte-to-frequency map), and the
+ * headers (which contains the deflated Huffman tree), and the
  * file offset is at the start of the first decodable byte.
  *
  * Decoding is done by extracting bits from each byte read from
@@ -143,8 +134,9 @@ void encode(FILE *ifile, struct node *root, FILE *ofile, uint64_t *nr_rd_bytes,
  * The resultant byte obtained from the tree traversal is written
  * to the output file.
  */
-void decode(FILE *ifile, uint64_t nr_en_bytes, struct node *root, FILE *ofile,
-            uint64_t *nr_rd_bytes, uint64_t *nr_wr_bytes) {
+void decode_with_tree(FILE *ifile, uint64_t nr_en_bytes, struct node *root,
+                      FILE *ofile, uint64_t *nr_rd_bytes,
+                      uint64_t *nr_wr_bytes) {
     uint8_t shift = 0, chunk, mask;
     uint64_t nr_rbytes = 0, nr_wbytes = 0;
     int16_t file_ch;
@@ -188,7 +180,6 @@ void decode(FILE *ifile, uint64_t nr_en_bytes, struct node *root, FILE *ofile,
                 break;
 
             fputc(branch->data.ch, ofile);
-            // printf("byte: %hhx\n", branch->data.ch);
             nr_wbytes++;
 
             /* Reset the branch to the root for the next byte. */
@@ -202,11 +193,12 @@ void decode(FILE *ifile, uint64_t nr_en_bytes, struct node *root, FILE *ofile,
          */
         if (shift >= MAX_INT_BUF_BITS) {
             file_ch = fgetc(ifile);
-            nr_rbytes++;
 
             /* If there are no more bytes to read. */
             if (file_ch == EOF)
                 break;
+
+            nr_rbytes++;
 
             /* Reset the shift counter. */
             shift = 0;
@@ -218,13 +210,135 @@ ret:
     *nr_wr_bytes = nr_wbytes;
 }
 
+/*
+ * Decode all the bytes in the encoded file (until the pseudo-EOF
+ * byte is reached) and write them to the output file. The return
+ * value is the number of bytes decoded.
+ *
+ * Unlike "decode_with_tree()", this function uses a look-up table for
+ * Huffman codes. Decoding is done by extracting bits from each byte read
+ * from the file. After reaching the maximum shift offset (log2 of the
+ * number of entries in the look-up table), the decoded byte present at
+ * that index is written to the file.
+ */
+void decode_with_tab(FILE *ifile, uint64_t nr_en_bytes, struct lookup *tab,
+                     uint32_t tab_sz, FILE *ofile, uint64_t *nr_rd_bytes,
+                     uint64_t *nr_wr_bytes) {
+    uint8_t mask, bshft = 0, cshft = 0, mshft = 0;
+    uint64_t nr_rbytes = 0, nr_wbytes = 0;
+    uint32_t chunk = 0;
+    int16_t file_ch;
+    struct lookup *ent = NULL;
+
+    assert(tab);
+    assert(tab_sz > 0 && tab_sz <= MAX_LOOKUP_TAB_LEN);
+    assert(ifile);
+    assert(ofile);
+    assert(nr_rd_bytes);
+    assert(nr_wr_bytes);
+
+    mshft = logb2(tab_sz);
+    mask = 0x1U << (MAX_INT_BUF_BITS - 1);
+
+    file_ch = fgetc(ifile);
+
+    if (file_ch == EOF)
+        goto ret;
+
+    nr_rbytes++;
+
+    while (1) {
+        /*
+         * Read the most-significant-bit from the byte and
+         * append it to "chunk". Do this until the maximum
+         * shift count is reached.
+         */
+        chunk <<= 1;
+        chunk |= ((file_ch << bshft) & mask) ? 0x1U : 0x0U;
+
+        bshft++;
+        cshft++;
+
+        if (cshft >= mshft) {
+            /*
+             * Check the lookup table and see if it contains an
+             * entry for the index pointed to by "chunk".
+             */
+            ent = lookup_table(tab, tab_sz, chunk);
+            assert(ent);
+
+            /* No more bytes to decode, */
+            if (ent->ch == PSEUDO_NULL_BYTE && nr_rbytes >= nr_en_bytes)
+                goto ret;
+
+            /* Write the decoded byte to the file. */
+            fputc(ent->ch, ofile);
+            nr_wbytes++;
+
+            /*
+             * If the offset (of the code) is less than the shifted
+             * count, discard the decoded bits with the mask and
+             * reset "chunk" to the leftover bits. Also update the
+             * chunk shift count to reflect the difference.
+             */
+            chunk = chunk & ~((~0x0UL) << (mshft - (ent->off)));
+            cshft = mshft - ent->off;
+        }
+
+        /*
+         * If we have shifted all the bits, we should read
+         * another byte from the file and start extracting
+         * bits.
+         */
+        if (bshft >= MAX_INT_BUF_BITS) {
+            file_ch = fgetc(ifile);
+            if (file_ch == EOF)
+                break;
+
+            nr_rbytes++;
+
+            /* Reset the byte shift counter. */
+            bshft = 0;
+        }
+    }
+
+ret:
+    *nr_rd_bytes = nr_rbytes;
+    *nr_wr_bytes = nr_wbytes;
+}
+
+/* Wrapper for decoding. */
+void decode(int16_t with_tree, FILE *ifile, uint64_t nr_enc_bytes,
+            struct node *root, FILE *ofile, uint64_t *nr_rd_bytes,
+            uint64_t *nr_wr_bytes) {
+
+    struct lookup *tab = NULL;
+    uint32_t tab_sz;
+
+    assert(root);
+
+    if (with_tree) {
+        decode_with_tree(ifile, nr_enc_bytes, root, ofile, nr_rd_bytes,
+                         nr_wr_bytes);
+        return;
+    }
+
+    tab = make_lookup_table(root, &tab_sz);
+    assert(tab);
+    assert(tab_sz > 0 && tab_sz <= MAX_LOOKUP_TAB_LEN);
+
+    decode_with_tab(ifile, nr_enc_bytes, tab, tab_sz, ofile, nr_rd_bytes,
+                    nr_wr_bytes);
+
+    free(tab);
+}
 
 /* All the things happen here. */
 int main(int argc, char *argv[]) {
-    uint8_t *tbuf = NULL, *tree_arr = NULL;
+    uint8_t *tbuf = NULL;
     uint32_t map_sz;
     uint64_t nr_rbytes = 0, nr_wbytes = 0;
-    int16_t arg, enc = 1, dev = 0, max_tree_off;
+    int16_t arg, enc = 1, dev = 0, with_tree = 0;
     char *ifpath = NULL, *ofpath = NULL;
     FILE *ifile = NULL, *ofile = NULL;
 
@@ -232,7 +346,7 @@ int main(int argc, char *argv[]) {
     struct map *fmap = NULL;
     struct meta fmeta = {0, 0, 0, 0};
 
-    while ((arg = getopt(argc, argv, "edpi:o:h?")) > 0) {
+    while ((arg = getopt(argc, argv, "edpli:o:h?")) > 0) {
         switch (arg) {
         case 'e':
             enc = 1;
@@ -248,6 +362,9 @@ int main(int argc, char *argv[]) {
             break;
         case 'p':
             dev = 0;
+            break;
+        case 'l':
+            with_tree = 0;
             break;
         case 'h':
         case '?':
@@ -329,17 +446,11 @@ int main(int argc, char *argv[]) {
             fread(tbuf, sizeof(uint8_t), fmeta.nr_tree_bytes, ifile);
 
             head = decode_tree(tbuf, fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
-            max_tree_off = decode_tree_arr(head, tree_arr);
-            printf("off: %d\n", max_tree_off);
-            for (int i = 0; i <  max_tree_off; i++) {
-                // if (tree_arr[i] < 128)
-                    printf("arr[%d]: %c\n", i, tree_arr[i]);
-            }
+            assert(head);
 
             /* Decode the file and write to the output file. */
-            // decode(ifile, fmeta.nr_enc_bytes, tree_arr, ofile, &nr_rbytes,
-            //        &nr_wbytes);
-            decode(ifile, fmeta.nr_enc_bytes, head, ofile, &nr_rbytes, &nr_wbytes);
+            decode(with_tree, ifile, fmeta.nr_enc_bytes, head, ofile,
+                   &nr_rbytes, &nr_wbytes);
         }
 
         /* Check if the decode was successful. */

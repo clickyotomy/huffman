@@ -1,48 +1,13 @@
 #include "huffman.h"
 
-static uint16_t tree_arr_lt_idx(uint16_t i) {
-    return (i << 2) + 1;
-}
+uint8_t logb2(uint32_t n) {
+    uint8_t ret = 0;
 
-static uint16_t tree_arr_rt_idx(uint16_t i) {
-    return (i << 2) + 2;
-}
-
-static uint8_t tree_arr_lt(uint8_t *arr, uint16_t i, uint16_t max, uint8_t *ch) {
-    uint16_t tmp;
-
-    tmp = tree_arr_lt_idx(i);
-    if (tmp < max) {
-        if (ch)
-            *ch = arr[tmp];
-        return 1;
+    while (n >>= 1) {
+        ret++;
     }
 
-    return 0;
-}
-
-static uint8_t tree_arr_rt(uint8_t *arr, uint16_t i, uint16_t max, uint8_t *ch) {
-    uint16_t tmp;
-
-    tmp = tree_arr_rt_idx(i);
-    if (tmp < max) {
-        if (ch)
-            *ch = arr[tmp];
-        return 1;
-    }
-
-    return 0;
-}
-
-static uint8_t tree_arr_leaf(uint8_t *tree_arr, uint16_t idx, uint16_t max_off) {
-    assert(tree_arr);
-
-    uint8_t lt = 0, rt = 0, lt_ch, rt_ch;
-
-    lt = tree_arr_lt(tree_arr, idx, max_off, &lt_ch);
-    rt = tree_arr_rt(tree_arr, idx, max_off, &rt_ch);
-
-    return (lt == 0 && rt == 0);
+    return ret;
 }
 
 /* Return the height of the tree. */
@@ -101,29 +66,6 @@ void traverse_tree(uint8_t ch, struct node *root, int8_t off, uint8_t *arr,
     }
 }
 
-void traverse_tree_arr(uint8_t ch, uint8_t *root, uint16_t max_tree_off,
-                       uint16_t tree_off, int8_t off, uint8_t *arr,
-                       int8_t *ret) {
-    assert(arr);
-
-    if (tree_arr_leaf(root, tree_off, max_tree_off) && root[tree_off] == ch) {
-        *ret = off;
-        return;
-    }
-
-    if (*ret < 0 && tree_arr_lt(root, tree_off, max_tree_off, NULL)) {
-        arr[off] = 0;
-        traverse_tree_arr(ch, root, max_tree_off,
-                          tree_arr_lt_idx(tree_off), off + 1, arr, ret);
-    }
-
-    if (*ret < 0 && tree_arr_rt(root, tree_off, max_tree_off, NULL)) {
-        arr[off] = 1;
-        traverse_tree_arr(ch, root, max_tree_off,
-                          tree_arr_rt_idx(tree_off), off + 1, arr, ret);
-    }    
-}
-
 /*
  * Build a Huffmann encoding tree from a priority queue.
  *
@@ -157,23 +99,6 @@ void make_tree(struct node **head) {
             init_queue(head);
         }
     }
-}
-
-void make_tree_arr(struct node *root, uint8_t *buf, uint16_t *max_off, uint16_t off) {
-    assert(buf);
-
-    buf[off] = root->data.ch;
-    if (off > *max_off)
-        *max_off = off;
-
-    if (tree_leaf(root))
-        return;
-
-    if (root->left)
-        make_tree_arr(root->left, buf, max_off, tree_arr_lt_idx(off));
-
-    if (root->right)
-        make_tree_arr(root->right, buf, max_off, tree_arr_rt_idx(off));
 }
 
 /* Free all the nodes in the tree. */
@@ -338,20 +263,230 @@ struct node *decode_tree(uint8_t *buf, uint16_t eoff, uint8_t esh) {
     return inflate_tree(buf, eoff, esh, &doff, &dsh);
 }
 
-/* Wrapper for tree array inflation. */
-uint16_t decode_tree_arr(struct node *root, uint8_t *arr) {
-    uint16_t off = 0;
-    uint8_t *buf;
-
-    buf = calloc(1024 * 1024 * 1024, sizeof(uint8_t));
-    assert(buf);
-
-    make_tree_arr(root, buf, &off, 0);
-
-    arr = calloc(off, sizeof(uint8_t));
+/* Return the Huffman code for a given byte. */
+int8_t huffman_code(uint8_t ch, struct node *root, uint8_t *arr) {
+    assert(root);
     assert(arr);
 
-    printf("off: %d\n", off);
-    memcpy(arr, buf, sizeof(uint8_t) * off);
+    int8_t off = -1;
+    traverse_tree(ch, root, 0, arr, &off);
+
     return off;
+}
+
+/* Construct a lookup table for Huffman codes from the tree. */
+struct lookup *make_lookup_table(struct node *root, uint32_t *nr_tab_ents) {
+    uint32_t i, j;
+    int32_t off;
+    uint8_t *arr;
+    uint32_t th, nr_ents = 0;
+    uint64_t tmp, diff;
+    struct lookup *tab = NULL;
+
+    assert(nr_tab_ents);
+
+    th = tree_height(root);
+    assert(th > 0);
+
+    arr = calloc(th, sizeof(uint8_t));
+    assert(arr);
+
+    /* Calculate the number of entries needed for the lookup table. */
+    for (i = 0; i < MAX_HIST_TAB_LEN; i++) {
+        off = huffman_code((uint8_t)i, root, arr);
+
+        /* If the byte exists in the tree. */
+        if (off > 0) {
+            /*
+             * Calculate the number of "repeat" entries, i.e.,
+             * entries with the same Huffman code prefix that
+             * should be added to the table. This is obtained
+             * by calculating the number of bits the current
+             * code differs from the code of the byte with the
+             * maximum bit string length.
+             */
+            diff = 0x1UL << (th - off - 0x1U);
+            nr_ents += diff;
+        }
+    }
+
+    assert(nr_ents <= MAX_LOOKUP_TAB_LEN);
+
+    tab = calloc(nr_ents, sizeof(struct lookup));
+    assert(tab);
+
+    for (i = 0; i < MAX_HIST_TAB_LEN; i++) {
+        tmp = 0;
+        off = huffman_code((uint8_t)i, root, arr);
+
+        if (off > 0) {
+            for (j = 0; j < (uint16_t)off; j++) {
+                tmp |= arr[j];
+                tmp <<= 1;
+            }
+
+            /* Trim off the extra left shift. */
+            tmp >>= 1;
+            diff = (th - off) - 0x1U;
+
+            if (diff > 0) {
+                /* Shift the index value by the number of differing bits. */
+                tmp <<= diff;
+
+                /*
+                 * Starting off with the inital index value, increment the
+                 * index of the repeated entries until (2 ^ diff) entries
+                 * have to be filled. For instance, if the code is "011",
+                 * with length 3, and length of bit string for the byte with
+                 * the maximum bit string length is 5, the bit difference is
+                 * 5 - 3 = 2. So, we add repeat entries for the following
+                 * indexes:
+                 *
+                 *  +------+------+-------+
+                 *  | CODE | DIFF | INDEX |
+                 *  +------+------+-------+
+                 *  | 011  | 00   | 12    |
+                 *  | 011  | 01   | 13    |
+                 *  | 011  | 10   | 14    |
+                 *  | 011  | 11   | 15    |
+                 *  +------+------+-------+
+                 *
+                 * For a difference of 2 bits, a total for 2^2 = 4
+                 * entries are repeated.
+                 *
+                 */
+                for (j = 0; j < (0x1UL << diff); j++) {
+                    tab[tmp] = (struct lookup){
+                        .ch = (uint8_t)i,
+                        .off = (uint8_t)off,
+                    };
+
+                    tmp++;
+                }
+            } else {
+                tab[tmp] = (struct lookup){
+                    .ch = (uint8_t)i,
+                    .off = (uint8_t)off,
+                };
+            }
+        }
+    }
+
+    free(arr);
+
+    *nr_tab_ents = nr_ents;
+    return tab;
+}
+
+struct lookup *lookup_table(struct lookup *tab, uint32_t tab_sz, uint32_t idx) {
+    if (idx < tab_sz)
+        return &tab[idx];
+
+    return NULL;
+}
+
+/* Print all the Huffman codes in the tree. */
+void print_huffman_codes(struct node *root) {
+    uint16_t i, j;
+    uint8_t *arr;
+    uint32_t th;
+    int8_t off;
+
+    th = tree_height(root);
+    assert(th > 0);
+
+    arr = calloc(th, sizeof(uint8_t));
+    assert(arr);
+
+    printf("Huffman Codes (Maximum Length: %u)\n", th - 1);
+    for (i = 0; i < MAX_HIST_TAB_LEN; i++) {
+        off = huffman_code((char)i, root, arr);
+
+        if (off > 0) {
+            switch (i) {
+            case 0:
+                printf("byte: NUL, code: ");
+                break;
+
+            case '\n':
+                printf("byte: EOL, code: ");
+                break;
+
+            case '\r':
+                printf("byte: EOL, code: ");
+                break;
+
+            case '\t':
+                printf("byte: TAB, code: ");
+                break;
+
+            case PSEUDO_NULL_BYTE:
+                printf("byte: EOF, code: ");
+                break;
+
+            default:
+                if (i >= 32 && i < 127)
+                    printf("byte: \'%c\', code: ", (char)i);
+                else
+                    printf("byte: BIN, code: ");
+                break;
+            }
+
+            for (j = 0; j < off; j++)
+                printf("%d", arr[j]);
+
+            printf("\n");
+        }
+    }
+
+    free(arr);
+}
+
+void print_huffman_table(struct lookup *tab, uint32_t nr_tab_ents) {
+    uint32_t i, j, bit, len;
+    uint64_t tmp;
+
+    len = logb2(nr_tab_ents);
+
+    printf("Huffman Look-up Table (Entries: %u)\n", nr_tab_ents);
+    for (i = 0; i < nr_tab_ents; i++) {
+        printf("table[%04u]: off: %02u, ", i, tab[i].off);
+
+        switch (tab[i].ch) {
+        case 0:
+            printf("byte: NUL, code: ");
+            break;
+
+        case '\n':
+            printf("byte: EOL, code: ");
+            break;
+
+        case '\r':
+            printf("byte: EOL, code: ");
+            break;
+
+        case '\t':
+            printf("byte: TAB, code: ");
+            break;
+
+        case PSEUDO_NULL_BYTE:
+            printf("byte: EOF, code: ");
+            break;
+
+        default:
+            if (tab[i].ch >= 32 && tab[i].ch < 127)
+                printf("byte: \'%c\', code: ", (char)tab[i].ch);
+            else
+                printf("byte: BIN, code: ");
+            break;
+        }
+
+        tmp = i >> (len - tab[i].off);
+        for (j = 0; j < tab[i].off; j++) {
+            bit = tmp & (0x1UL << (tab[i].off - 1));
+            printf("%u", bit >> (tab[i].off - 1));
+            tmp <<= 1;
+        }
+        printf("\n");
+    }
 }

@@ -7,7 +7,7 @@
 // __device__ int16_t dev_tree_buff_off_incr(uint8_t *sh) {
 //     if (*sh < MAX_INT_BUF_BITS - 0x1U) {
 //         *sh++;
-//         return 0; 
+//         return 0;
 //     } else {
 //         *sh = 0;
 //         return 1;
@@ -77,7 +77,7 @@
 //     for (int i = 0; i < eoff; i++) {
 //         printf("tbuf[%d]: 0x%hx\n", i, buf[i]);
 //     }
-    
+
 //     *dev_tree = inflate_dev_tree(buf, eoff, esh, &doff, &dsh);
 // }
 
@@ -105,7 +105,8 @@
 //         branch = (chunk & mask) ? branch->right : branch->left;
 
 //         if (dev_tree_leaf(branch)) {
-//             if (branch->data.ch == PSEUDO_NULL_BYTE && nr_rbytes >= nr_en_bytes)
+//             if (branch->data.ch == PSEUDO_NULL_BYTE && nr_rbytes >=
+//             nr_en_bytes)
 //                 break;
 
 //             ofile[nr_wbytes] = branch->data.ch;
@@ -145,7 +146,8 @@
 //     assert(nr_rd_bytes);
 //     assert(nr_wr_bytes);
 
-//     nr_bits = (fmeta->nr_enc_bytes * MAX_INT_BUF_BITS) + fmeta->tree_lb_sh_pos;
+//     nr_bits = (fmeta->nr_enc_bytes * MAX_INT_BUF_BITS) +
+//     fmeta->tree_lb_sh_pos;
 
 //     tbuf = (uint8_t *)calloc(fmeta->nr_tree_bytes, sizeof(uint8_t));
 //     ibuf = (uint8_t *)calloc(fmeta->nr_enc_bytes, sizeof(uint8_t));
@@ -186,8 +188,9 @@
 //                           dev_obuf, dev_nr_rd_bytes, dev_nr_wr_bytes);
 //     cudaDeviceSynchronize();
 
-//     cudaMemcpy(obuf, dev_obuf, sizeof(uint8_t) * fmeta->nr_enc_bytes, cudaMemcpyDeviceToHost);
-//     cudaMemcpy(nr_rd_bytes, dev_nr_rd_bytes, sizeof(uint8_t),
+//     cudaMemcpy(obuf, dev_obuf, sizeof(uint8_t) * fmeta->nr_enc_bytes,
+//     cudaMemcpyDeviceToHost); cudaMemcpy(nr_rd_bytes, dev_nr_rd_bytes,
+//     sizeof(uint8_t),
 //                cudaMemcpyDeviceToHost);
 //     cudaMemcpy(nr_wr_bytes, dev_nr_wr_bytes, sizeof(uint8_t),
 //                cudaMemcpyDeviceToHost);
