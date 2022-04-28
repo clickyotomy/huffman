@@ -90,8 +90,8 @@ struct map *make_map(FILE *, uint32_t *);
 
 /* Routines for encoding and decoding. */
 void encode(FILE *, struct node *, FILE *, uint64_t *, uint64_t *);
-void decode(int16_t, FILE *, uint64_t, struct node *, FILE *, uint64_t *,
-            uint64_t *);
+void decode(int16_t, int16_t, FILE *, struct meta *, struct node *, FILE *,
+            uint64_t *, uint64_t *);
 void decode_with_tree(FILE *, uint64_t, struct node *, FILE *, uint64_t *,
                       uint64_t *);
 void decode_with_tab(FILE *, uint64_t, struct lookup *, uint32_t, FILE *,

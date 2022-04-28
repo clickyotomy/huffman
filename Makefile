@@ -3,7 +3,7 @@ export LD_LIBRARY_PATH := /usr/local/depot/cuda-10.2/lib64/
 SHELL       = /bin/bash
 PROG_NAME   = huffman
 CC          = $(shell which clang)
-CFLAGS      = -m64 -Werror -Wall -Wextra -ggdb -O3 -std=c11
+CFLAGS      = -m64 -Wall -Werror -Wextra -pedantic -ggdb -O3 -std=c11
 OBJS        = $(PROG_NAME).o tree.o map.o queue.o parallel.o
 LDFLAGS     = -L$(LD_LIBRARY_PATH) -lcudart
 NVCC        = nvcc
@@ -12,7 +12,7 @@ FMT         = $(shell which clang-format) -style='{IndentWidth: 4, TabWidth: 4}'
 VALGRIND    = valgrind --leak-check=full --show-leak-kinds=all
 PERF_EVENTS = 'cache-references,cache-misses,cycles,instructions,branches,faults,migrations'
 PERF_ARGS   = -B -e $(PERF_EVENTS)
-PERF_STAT   = $(shell which clang) stat $(PERF_ARGS)
+PERF_STAT   = $(shell which perf) stat $(PERF_ARGS)
 RAND_QMIN   = 0    # 0 bytes.
 RAND_QMAX   = 128  # 128 bytes.
 RAND_QAWK   = BEGIN{ srand(); print int(rand()*($(RAND_QMAX)-$(RAND_QMIN))+$(RAND_QMIN)) }
@@ -27,7 +27,7 @@ $(PROG_NAME): $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)
 
 %.o: %.cu
-	PATH=$(PATH) $(NVCC) $(NVCCFLAGS) $< -c -o $@
+	PATH=$(PATH) $(NVCC) $(NVCCFLAGS) $(LDFLAGS) $< -c -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) $< -c -o $@
@@ -51,8 +51,8 @@ test-qrand: default
 	$(eval RAND_INT=$(shell awk '$(RAND_QAWK)'))
 	base64 /dev/urandom | head -c $(RAND_INT) >rand.txt
 
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i rand.txt -o rand.enc
-	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i rand.enc -o rand.dec
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) /usr/bin/time ./$(PROG_NAME) -e -i rand.txt -o rand.enc
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) /usr/bin/time ./$(PROG_NAME) -d -i rand.enc -o rand.dec
 
 	diff rand.dec rand.txt
 

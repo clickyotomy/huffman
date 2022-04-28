@@ -308,7 +308,7 @@ ret:
 }
 
 /* Wrapper for decoding. */
-void decode(int16_t with_tree, FILE *ifile, uint64_t nr_enc_bytes,
+void decode(int16_t dev, int16_t with_tree, FILE *ifile, struct meta *fmeta,
             struct node *root, FILE *ofile, uint64_t *nr_rd_bytes,
             uint64_t *nr_wr_bytes) {
 
@@ -318,7 +318,8 @@ void decode(int16_t with_tree, FILE *ifile, uint64_t nr_enc_bytes,
     assert(root);
 
     if (with_tree) {
-        decode_with_tree(ifile, nr_enc_bytes, root, ofile, nr_rd_bytes,
+        assert(dev == 0);
+        decode_with_tree(ifile, fmeta->nr_enc_bytes, root, ofile, nr_rd_bytes,
                          nr_wr_bytes);
         return;
     }
@@ -327,8 +328,12 @@ void decode(int16_t with_tree, FILE *ifile, uint64_t nr_enc_bytes,
     assert(tab);
     assert(tab_sz > 0 && tab_sz <= MAX_LOOKUP_TAB_LEN);
 
-    decode_with_tab(ifile, nr_enc_bytes, tab, tab_sz, ofile, nr_rd_bytes,
-                    nr_wr_bytes);
+    if (dev)
+        dev_trampoline(ifile, fmeta, tab, tab_sz, ofile, nr_rd_bytes,
+                       nr_wr_bytes);
+    else
+        decode_with_tab(ifile, fmeta->nr_enc_bytes, tab, tab_sz, ofile,
+                        nr_rd_bytes, nr_wr_bytes);
 
     free(tab);
 }
@@ -338,7 +343,7 @@ int main(int argc, char *argv[]) {
     uint8_t *tbuf = NULL;
     uint32_t map_sz;
     uint64_t nr_rbytes = 0, nr_wbytes = 0;
-    int16_t arg, enc = 1, dev = 0, with_tree = 0;
+    int16_t arg, enc = 1, dev = 1, with_tree = 0;
     char *ifpath = NULL, *ofpath = NULL;
     FILE *ifile = NULL, *ofile = NULL;
 
@@ -361,7 +366,7 @@ int main(int argc, char *argv[]) {
             ofpath = optarg;
             break;
         case 'p':
-            dev = 0;
+            dev = 1;
             break;
         case 'l':
             with_tree = 0;
@@ -434,24 +439,20 @@ int main(int argc, char *argv[]) {
         assert(fmeta.nr_src_bytes >= 0);
         assert(fmeta.nr_enc_bytes >= 0);
 
-        if (dev) {
-            // dev_trampoline(ifile, &fmeta, ofile, &nr_rbytes, &nr_wbytes);
-        } else {
-            /*
-             * Read the tree from file into a temporary
-             * buffer and inflate it.
-             */
-            tbuf = calloc(fmeta.nr_tree_bytes, sizeof(uint8_t));
-            assert(tbuf);
-            fread(tbuf, sizeof(uint8_t), fmeta.nr_tree_bytes, ifile);
+        /*
+         * Read the tree from file into a temporary
+         * buffer and inflate it.
+         */
+        tbuf = calloc(fmeta.nr_tree_bytes, sizeof(uint8_t));
+        assert(tbuf);
+        fread(tbuf, sizeof(uint8_t), fmeta.nr_tree_bytes, ifile);
 
-            head = decode_tree(tbuf, fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
-            assert(head);
+        head = decode_tree(tbuf, fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
+        assert(head);
 
-            /* Decode the file and write to the output file. */
-            decode(with_tree, ifile, fmeta.nr_enc_bytes, head, ofile,
-                   &nr_rbytes, &nr_wbytes);
-        }
+        /* Decode the file and write to the output file. */
+        decode(dev, with_tree, ifile, &fmeta, head, ofile, &nr_rbytes,
+               &nr_wbytes);
 
         /* Check if the decode was successful. */
         assert(fmeta.nr_enc_bytes == nr_rbytes);

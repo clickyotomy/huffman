@@ -4,16 +4,6 @@
 
 #include "huffman.h"
 
-/* Helper to check and print runtime errors. */
-// static inline cudaError_t chkCuda(cudaError_t result) {
-//     if (result != cudaSuccess) {
-//         fprintf(stderr, "CUDA Runtime Error: %s\n",
-//         		cudaGetErrorString(result));
-//         assert(result == cudaSuccess);
-//     }
-//     return result;
-// }
-
 __device__ uint8_t dev_log2(uint32_t n) {
     uint8_t ret = 0;
 
@@ -52,7 +42,6 @@ __global__ void kern_decode(uint8_t *ifile, uint64_t nr_en_bytes,
     mask = 0x1U << (MAX_INT_BUF_BITS - 1);
 
     file_ch = ifile[0];
-    // printf("file_ch: 0x%x\n", file_ch);
     nr_rbytes++;
 
     while (1) {
@@ -93,7 +82,7 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
                                uint64_t *nr_rd_bytes, uint64_t *nr_wr_bytes) {
 
     uint8_t *ibuf = NULL, *obuf = NULL, *dev_ibuf = NULL, *dev_obuf = NULL;
-    uint64_t /*nr_bits,*/ *dev_nr_rd_bytes, *dev_nr_wr_bytes;
+    uint64_t *dev_nr_rd_bytes, *dev_nr_wr_bytes;
     struct lookup *dev_tab;
 
     /* Standard asserts. */
@@ -104,10 +93,6 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
     assert(ofile);
     assert(nr_rd_bytes);
     assert(nr_wr_bytes);
-
-    /* Calculate the number of bits. */
-    // nr_bits = (fmeta->nr_enc_bytes * MAX_INT_BUF_BITS) +
-    // fmeta->tree_lb_sh_pos;
 
     /* Copy the table to the device. */
     cudaMalloc((void **)&dev_tab, sizeof(struct lookup) * tab_sz);
