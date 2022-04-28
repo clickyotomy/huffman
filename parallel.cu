@@ -1,200 +1,170 @@
-// #include <cuda.h>
-// #include <cuda_runtime.h>
-// #include <driver_functions.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <driver_functions.h>
 
-// #include "huffman.h"
+#include "huffman.h"
 
-// __device__ int16_t dev_tree_buff_off_incr(uint8_t *sh) {
-//     if (*sh < MAX_INT_BUF_BITS - 0x1U) {
-//         *sh++;
-//         return 0;
-//     } else {
-//         *sh = 0;
-//         return 1;
+/* Helper to check and print runtime errors. */
+// static inline cudaError_t chkCuda(cudaError_t result) {
+//     if (result != cudaSuccess) {
+//         fprintf(stderr, "CUDA Runtime Error: %s\n",
+//         		cudaGetErrorString(result));
+//         assert(result == cudaSuccess);
 //     }
+//     return result;
 // }
 
-// __device__ uint8_t dev_tree_leaf(struct node *node) {
-//     return (!node->left && !node->right);
-// }
+__device__ uint8_t dev_log2(uint32_t n) {
+    uint8_t ret = 0;
 
-// __device__ struct node *inflate_dev_tree(uint8_t *buf, uint16_t eoff,
-//                                          uint8_t esh, uint16_t *doff,
-//                                          uint8_t *dsh) {
-//     uint8_t sh = MAX_INT_BUF_BITS, bit, mask, i;
-//     struct node *n;
+    while (n >>= 1) {
+        ret++;
+    }
 
-//     if (*doff >= eoff)
-//         return NULL;
+    return ret;
+}
 
-//     cudaMalloc((void **)n, sizeof(struct node));
-//     mask = 0x1U << (MAX_INT_BUF_BITS - 1);
+__device__ struct lookup *dev_lookup(struct lookup *tab, uint32_t tab_sz,
+                                     uint32_t idx) {
+    if (idx < tab_sz)
+        return &tab[idx];
 
-//     if (*doff == (eoff - 1))
-//         sh = esh;
+    return NULL;
+}
 
-//     bit = ((buf[*doff] << *dsh) & mask) > 0;
-//     printf("bit\n");
-//     *doff += dev_tree_buff_off_incr(dsh);
-//     printf("bit: %d\n", *doff);
+__global__ void kern_decode(uint8_t *ifile, uint64_t nr_en_bytes,
+                            struct lookup *tab, uint32_t tab_sz, uint8_t *ofile,
+                            uint64_t *nr_rd_bytes, uint64_t *nr_wr_bytes) {
 
-//     if (bit) {
-//         n->left = NULL;
-//         n->right = NULL;
+    uint8_t file_ch, mask, bshft = 0, cshft = 0, mshft = 0;
+    uint64_t nr_rbytes = 0, nr_wbytes = 0;
+    uint32_t chunk = 0;
+    struct lookup *ent = NULL;
 
-//         for (i = 0; i < sh; i++) {
-//             bit = ((buf[*doff] << *dsh) & mask) > 0;
-//             printf("loop: %d\n", i );
-//             *doff += dev_tree_buff_off_incr(dsh);
+    assert(tab);
+    assert(tab_sz > 0 && tab_sz <= MAX_LOOKUP_TAB_LEN);
+    assert(ifile);
+    assert(ofile);
+    assert(nr_rd_bytes);
+    assert(nr_wr_bytes);
 
-//             n->data.ch <<= 1;
-//             n->data.ch = n->data.ch | bit;
-//         }
+    mshft = dev_log2(tab_sz);
+    mask = 0x1U << (MAX_INT_BUF_BITS - 1);
 
-//         printf("dec: %c\n", n->data.ch);
-//         return n;
-//     }
+    file_ch = ifile[0];
+    // printf("file_ch: 0x%x\n", file_ch);
+    nr_rbytes++;
 
-//     n->data.ch = PSEUDO_TREE_BYTE;
-//     printf("inflate_dev_tree-r1\n");
-//     n->left = inflate_dev_tree(buf, eoff, esh, doff, dsh);
-//     printf("inflate_dev_tree-r2\n");
-//     n->right = inflate_dev_tree(buf, eoff, esh, doff, dsh);
+    while (1) {
+        chunk <<= 1;
+        chunk |= ((file_ch << bshft) & mask) ? 0x1U : 0x0U;
 
-//     return n;
-// }
+        bshft++;
+        cshft++;
 
-// __global__ void kern_decode_tree(uint8_t *buf, uint16_t eoff, uint8_t esh,
-//                                  struct node **dev_tree) {
-//     uint8_t dsh = 0;
-//     uint16_t doff = 0;
+        if (cshft >= mshft) {
+            ent = dev_lookup(tab, tab_sz, chunk);
+            assert(ent);
 
-//     // cudaMalloc((void **)&dsh, sizeof(uint64_t));
-//     // cudaMalloc((void **)&doff, sizeof(uint64_t));
-//     // cudaMemset((void *)&dsh, 0, sizeof(uint64_t));
-//     // cudaMemset((void *)&doff, 0, sizeof(uint64_t));
+            if (ent->ch == PSEUDO_NULL_BYTE && nr_rbytes >= nr_en_bytes)
+                goto ret;
 
-//     for (int i = 0; i < eoff; i++) {
-//         printf("tbuf[%d]: 0x%hx\n", i, buf[i]);
-//     }
+            ofile[nr_wbytes] = (uint8_t)ent->ch;
+            nr_wbytes++;
 
-//     *dev_tree = inflate_dev_tree(buf, eoff, esh, &doff, &dsh);
-// }
+            chunk = chunk & ~((~0x0UL) << (mshft - (ent->off)));
+            cshft = mshft - ent->off;
+        }
 
-// __global__ void kern_decode(uint8_t *ifile, uint64_t nr_en_bytes,
-//                             struct node *root, uint8_t *ofile,
-//                             uint64_t *nr_rd_bytes, uint64_t *nr_wr_bytes) {
-//     uint8_t shift = 0, chunk, mask;
-//     uint64_t nr_rbytes = 0, nr_wbytes = 0;
-//     int16_t file_ch;
-//     struct node *branch;
+        if (bshft >= MAX_INT_BUF_BITS) {
+            file_ch = ifile[nr_rbytes];
+            nr_rbytes++;
+            bshft = 0;
+        }
+    }
 
-//     branch = root;
-//     mask = 0x1U << (MAX_INT_BUF_BITS - 1);
-//     file_ch = ifile[nr_rbytes];
+ret:
+    nr_rd_bytes[0] = nr_rbytes;
+    nr_wr_bytes[0] = nr_wbytes;
+}
 
-//     if (file_ch == EOF)
-//         goto ret;
+extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
+                               struct lookup *tab, uint32_t tab_sz, FILE *ofile,
+                               uint64_t *nr_rd_bytes, uint64_t *nr_wr_bytes) {
 
-//     nr_rbytes++;
+    uint8_t *ibuf = NULL, *obuf = NULL, *dev_ibuf = NULL, *dev_obuf = NULL;
+    uint64_t /*nr_bits,*/ *dev_nr_rd_bytes, *dev_nr_wr_bytes;
+    struct lookup *dev_tab;
 
-//     while (1) {
-//         chunk = (uint8_t)file_ch << shift;
-//         shift++;
+    /* Standard asserts. */
+    assert(fmeta);
+    assert(tab);
+    assert(tab_sz);
+    assert(ifile);
+    assert(ofile);
+    assert(nr_rd_bytes);
+    assert(nr_wr_bytes);
 
-//         branch = (chunk & mask) ? branch->right : branch->left;
+    /* Calculate the number of bits. */
+    // nr_bits = (fmeta->nr_enc_bytes * MAX_INT_BUF_BITS) +
+    // fmeta->tree_lb_sh_pos;
 
-//         if (dev_tree_leaf(branch)) {
-//             if (branch->data.ch == PSEUDO_NULL_BYTE && nr_rbytes >=
-//             nr_en_bytes)
-//                 break;
+    /* Copy the table to the device. */
+    cudaMalloc((void **)&dev_tab, sizeof(struct lookup) * tab_sz);
+    cudaMemset(dev_tab, 0, sizeof(uint8_t) * tab_sz);
+    assert(dev_tab);
 
-//             ofile[nr_wbytes] = branch->data.ch;
-//             printf("byte: %c\n", ofile[nr_wbytes]);
-//             nr_wbytes++;
+    cudaMemcpy(dev_tab, tab, sizeof(struct lookup) * tab_sz,
+               cudaMemcpyHostToDevice);
 
-//             branch = root;
-//         }
+    /* Read the encoded file content into the host input file buffer. */
+    ibuf = (uint8_t *)calloc(fmeta->nr_enc_bytes, sizeof(uint8_t));
+    assert(ibuf);
 
-//         if (shift >= MAX_INT_BUF_BITS) {
-//             nr_rbytes++;
+    fread(ibuf, sizeof(uint8_t), (size_t)fmeta->nr_enc_bytes, ifile);
 
-//             if (nr_rbytes >= nr_en_bytes)
-//                 break;
+    cudaMalloc((void **)&dev_ibuf, sizeof(uint8_t) * fmeta->nr_enc_bytes);
+    assert(dev_ibuf);
 
-//             file_ch = ifile[nr_rbytes];
-//             shift = 0;
-//         }
-//     }
+    cudaMemset(dev_ibuf, 0, sizeof(uint8_t) * fmeta->nr_enc_bytes);
+    cudaMemcpy(dev_ibuf, ibuf, sizeof(uint8_t) * fmeta->nr_enc_bytes,
+               cudaMemcpyHostToDevice);
+    free(ibuf);
 
-// ret:
-//     *nr_rd_bytes = nr_rbytes;
-//     *nr_wr_bytes = nr_wbytes;
-// }
+    /* Allocate memory for decoding. */
+    cudaMalloc((void **)&dev_nr_rd_bytes, sizeof(uint64_t));
+    assert(dev_nr_rd_bytes);
+    cudaMemset(dev_nr_rd_bytes, 0, sizeof(uint64_t));
 
-// extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta, FILE *ofile,
-//                     uint64_t *nr_rd_bytes, uint64_t *nr_wr_bytes) {
-//     uint8_t *ibuf = NULL, *obuf = NULL, *tbuf = NULL, *dev_ibuf = NULL,
-//             *dev_obuf = NULL, *dev_tbuf = NULL;
-//     uint64_t nr_bits, *dev_nr_rd_bytes, *dev_nr_wr_bytes;
-//     struct node *dev_tree_root;
+    cudaMalloc((void **)&dev_nr_wr_bytes, sizeof(uint64_t));
+    assert(dev_nr_wr_bytes);
+    cudaMemset(dev_nr_wr_bytes, 0, sizeof(uint64_t));
 
-//     assert(ifile);
-//     assert(fmeta);
-//     assert(ofile);
+    cudaMalloc((void **)&dev_obuf, sizeof(uint8_t) * fmeta->nr_src_bytes);
+    assert(dev_obuf);
+    cudaMemset(dev_obuf, 0, sizeof(uint8_t) * fmeta->nr_src_bytes);
 
-//     assert(nr_rd_bytes);
-//     assert(nr_wr_bytes);
+    /* Decode the file. */
+    kern_decode<<<1, 1>>>(dev_ibuf, fmeta->nr_enc_bytes, dev_tab, tab_sz,
+                          dev_obuf, dev_nr_rd_bytes, dev_nr_wr_bytes);
+    cudaDeviceSynchronize();
+    cudaFree(dev_ibuf);
+    cudaFree(dev_tab);
 
-//     nr_bits = (fmeta->nr_enc_bytes * MAX_INT_BUF_BITS) +
-//     fmeta->tree_lb_sh_pos;
+    /* Copy the read/write stats. */
+    cudaMemcpy(nr_rd_bytes, dev_nr_rd_bytes, sizeof(uint64_t),
+               cudaMemcpyDeviceToHost);
+    cudaMemcpy(nr_wr_bytes, dev_nr_wr_bytes, sizeof(uint64_t),
+               cudaMemcpyDeviceToHost);
 
-//     tbuf = (uint8_t *)calloc(fmeta->nr_tree_bytes, sizeof(uint8_t));
-//     ibuf = (uint8_t *)calloc(fmeta->nr_enc_bytes, sizeof(uint8_t));
-//     obuf = (uint8_t *)calloc(fmeta->nr_src_bytes, sizeof(uint8_t));
+    /* Copy the device output file buffer to host. */
+    obuf = (uint8_t *)calloc(*nr_wr_bytes, sizeof(uint8_t));
+    assert(obuf);
+    cudaMemcpy(obuf, dev_obuf, sizeof(uint8_t) * (*nr_wr_bytes),
+               cudaMemcpyDeviceToHost);
 
-//     assert(tbuf);
-//     assert(ibuf);
-//     assert(obuf);
-
-//     cudaMalloc((void **)&dev_tbuf, fmeta->nr_tree_bytes * sizeof(uint8_t));
-//     cudaMalloc((void **)&dev_ibuf, fmeta->nr_enc_bytes * sizeof(uint8_t));
-//     cudaMalloc((void **)&dev_obuf, fmeta->nr_src_bytes * sizeof(uint8_t));
-
-//     cudaMalloc((void **)&dev_tree_root, sizeof(struct node));
-//     cudaMalloc((void **)&dev_nr_rd_bytes, sizeof(uint64_t));
-//     cudaMalloc((void **)&dev_nr_wr_bytes, sizeof(uint64_t));
-
-//     fread(tbuf, sizeof(uint8_t), (size_t)fmeta->nr_tree_bytes, ifile);
-//     fread(ibuf, sizeof(uint8_t), (size_t)fmeta->nr_enc_bytes, ifile);
-
-//     cudaMemcpy(dev_tbuf, tbuf, fmeta->nr_tree_bytes,
-//                cudaMemcpyHostToDevice);
-
-//     printf("launch 1\n");
-//     kern_decode_tree<<<1, 1>>>(dev_tbuf, fmeta->nr_tree_bytes,
-//                                fmeta->tree_lb_sh_pos, &dev_tree_root);
-
-//     cudaMemcpy(dev_ibuf, ibuf, sizeof(uint8_t) * fmeta->nr_enc_bytes,
-//                cudaMemcpyHostToDevice);
-
-//     // free(tbuf);
-//     // free(ibuf);
-
-//     cudaDeviceSynchronize();
-
-//     printf("launch 2\n");
-//     kern_decode<<<1, 1>>>(dev_ibuf, fmeta->nr_enc_bytes, dev_tree_root,
-//                           dev_obuf, dev_nr_rd_bytes, dev_nr_wr_bytes);
-//     cudaDeviceSynchronize();
-
-//     cudaMemcpy(obuf, dev_obuf, sizeof(uint8_t) * fmeta->nr_enc_bytes,
-//     cudaMemcpyDeviceToHost); cudaMemcpy(nr_rd_bytes, dev_nr_rd_bytes,
-//     sizeof(uint8_t),
-//                cudaMemcpyDeviceToHost);
-//     cudaMemcpy(nr_wr_bytes, dev_nr_wr_bytes, sizeof(uint8_t),
-//                cudaMemcpyDeviceToHost);
-
-//     printf("nr_wr_bytes: %d, %d\n", fmeta->nr_src_bytes, nr_wr_bytes);
-//     fwrite(obuf, sizeof(uint8_t), (size_t)nr_wr_bytes, ofile);
-// }
+    /* Write the decoded content to the output file. */
+    fwrite(obuf, sizeof(uint8_t), *nr_wr_bytes, ofile);
+    free(obuf);
+    cudaFree(dev_obuf);
+}
