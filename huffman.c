@@ -5,12 +5,12 @@
 void prog_usage(const char *prog) {
     printf("huffman: A simple text-based Huffman {en,de}coder.\n\n"
            "USAGE\n"
-           "  %s (-e | -d) -i INPUT -o OUTPUT [-h]\n\n"
+           "  %s (-e | -d [-t -n]) -i INPUT -o OUTPUT [-h]\n\n"
            "ARGUMENTS\n"
            "  -e  encode (default operation)\n"
            "  -d  decode\n"
-           "  -l  use look-up table\n"
-           "  -p  parallel decoding\n"
+           "  -t  use tree instead of look-up table (host only; for decode)\n"
+           "  -n  run on host instead of GPU (for decode)\n"
            "  -i  input file path\n"
            "  -o  output file path\n"
            "  -h  display program usage\n",
@@ -18,8 +18,12 @@ void prog_usage(const char *prog) {
 }
 
 /* Exit on error. */
-void err_exit(const char *message) {
-    perror(message);
+void err_exit(const char *message, uint8_t err) {
+    if (err)
+        perror(message);
+    else
+        printf("%s\n", message);
+
     exit(EXIT_FAILURE);
 }
 
@@ -351,7 +355,7 @@ int main(int argc, char *argv[]) {
     struct map *fmap = NULL;
     struct meta fmeta = {0, 0, 0, 0};
 
-    while ((arg = getopt(argc, argv, "edpli:o:h?")) > 0) {
+    while ((arg = getopt(argc, argv, "edtni:o:h?")) > 0) {
         switch (arg) {
         case 'e':
             enc = 1;
@@ -359,17 +363,17 @@ int main(int argc, char *argv[]) {
         case 'd':
             enc = 0;
             break;
+        case 't':
+            with_tree = 1;
+            break;
+        case 'n':
+            dev = 0;
+            break;
         case 'i':
             ifpath = optarg;
             break;
         case 'o':
             ofpath = optarg;
-            break;
-        case 'p':
-            dev = 1;
-            break;
-        case 'l':
-            with_tree = 0;
             break;
         case 'h':
         case '?':
@@ -379,11 +383,14 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    if (with_tree && dev)
+        err_exit("error: cannot run tree decode in device mode", 0);
+
     if (!(ifile = fopen(ifpath, "rb")))
-        err_exit("error: failed to open input file");
+        err_exit("error: failed to open input file", 1);
 
     if (!(ofile = fopen(ofpath, "wb")))
-        err_exit("error: failed to open output file");
+        err_exit("error: failed to open output file", 1);
 
     /* Encoding. */
     if (enc) {

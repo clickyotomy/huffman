@@ -99,6 +99,6 @@ void decode_with_tab(FILE *, uint64_t, struct lookup *, uint32_t, FILE *,
 
 /* Helper routines. */
 void prog_usage(const char *);
-void err_exit(const char *);
+void err_exit(const char *, uint8_t);
 
 #endif /* DEFINE __HUFFMAN_H__ */

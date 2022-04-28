@@ -4,13 +4,13 @@ A simple text-based Huffman encoder and decoder.
 
 
 USAGE
-	huffman (-e | -d [-l -p]) -i INPUT -o OUTPUT [-h]
+	huffman (-e | -d [-t -n]) -i INPUT -o OUTPUT [-h]
 
 ARGUMENTS
 	-e  encode (default operation)
 	-d  decode
-	-l  use look-up table
-	-p  parallel decoding
+	-t  use tree instead of look-up table (host only; for decode)
+	-n  run on host instead of GPU (for decode)
 	-i  input file path
 	-o  output file path
 	-h  display program usage
