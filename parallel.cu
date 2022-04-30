@@ -20,7 +20,8 @@
 
 #define UNIT_SIZE 8
 #define SUBSEQ_LENGTH 4096
-#define THREADS_PER_BLOCK 256
+#define THREADS_PER_BLOCK 128
+#define SUBSEQ_CONV 32
 
 __device__ bool dev_blocks_synchronized;
 
@@ -117,7 +118,7 @@ __device__ void decode_subsequence(struct lookup *tab, uint32_t tab_sz,
     uint64_t num_symbols = 0, num_bits = 0;
     uint8_t c;
 
-    while (offset <= subseq_end) {
+    while (offset < subseq_end) {
         num_bits =
             decode_sym(offset, tab, tab_sz, bit_string, total_nr_bits, &c);
 
@@ -152,7 +153,7 @@ decode_subsequence_write(struct lookup *tab, uint32_t tab_sz,
     uint8_t c;
     uint64_t out_pos = 0;
 
-    while (offset <= subseq_end) {
+    while (offset < subseq_end) {
         num_bits =
             decode_sym(offset, tab, tab_sz, bit_string, total_nr_bits, &c);
 
@@ -430,7 +431,7 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
 
     uint8_t *ibuf = NULL, *obuf = NULL, *dev_ibuf = NULL, *dev_obuf = NULL;
     uint64_t total_nr_bits, *dev_nr_rd_bytes, *dev_nr_wr_bytes;
-    size_t num_subseq, num_sequences;
+    size_t num_subseq, num_sequences, conv = 0;
     struct lookup *dev_tab;
     struct sync_point *dev_sync_points;
     bool *blocks_synchronized, *dev_sequences_sync;
@@ -441,7 +442,7 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
     cudaEventCreate(&stop);
 
     total_nr_bits = (fmeta->nr_enc_bytes * UNIT_SIZE);
-    num_subseq = UPDIV(total_nr_bits, SUBSEQ_LENGTH);
+    num_subseq = UPDIV(total_nr_bits, (SUBSEQ_LENGTH * UNIT_SIZE));
     num_sequences = UPDIV(num_subseq, THREADS_PER_BLOCK);
 
     /* Standard asserts. */
@@ -519,7 +520,7 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
 
         blocks_synchronized = (bool *)calloc(1, sizeof(bool));
         *blocks_synchronized = false;
-        while (!*blocks_synchronized) {
+        while (!*blocks_synchronized && conv < SUBSEQ_CONV) {
             phase2_synchronise_blocks<<<num_sequences, THREADS_PER_BLOCK>>>(
                 total_nr_bits, num_subseq, num_sequences, dev_ibuf, dev_tab,
                 tab_sz, dev_sync_points, dev_sequences_sync);
@@ -530,6 +531,7 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
 
             cudaMemcpyFromSymbol(blocks_synchronized, dev_blocks_synchronized,
                                  sizeof(bool), 0, cudaMemcpyDeviceToHost);
+            conv++;
         }
 
         cudaEventRecord(stop);
@@ -537,16 +539,11 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
         cudaEventElapsedTime(&p2, start, stop);
     }
 
-    /* Phases 3 and 4. */
+    /* Phases 3. */
     {
         cudaEventRecord(start);
 
         phase3(dev_sync_points, num_subseq, num_sequences);
-        cudaDeviceSynchronize();
-
-        phase4_decode_write_output<<<num_sequences, THREADS_PER_BLOCK>>>(
-            total_nr_bits, num_subseq, dev_ibuf, dev_tab, tab_sz,
-            dev_sync_points, dev_obuf);
         cudaDeviceSynchronize();
 
         cudaEventRecord(stop);
@@ -554,26 +551,33 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
         cudaEventElapsedTime(&p3, start, stop);
     }
 
-    /* We will not be timing the file writes. */
-    cudaFree(dev_ibuf);
-    cudaFree(dev_tab);
+    /* Phase 4: We will not be timing the file writes. */
+    {
+        phase4_decode_write_output<<<num_sequences, THREADS_PER_BLOCK>>>(
+            total_nr_bits, num_subseq, dev_ibuf, dev_tab, tab_sz,
+            dev_sync_points, dev_obuf);
+        cudaDeviceSynchronize();
 
-    /* Copy the device output file buffer to host. */
-    obuf = (uint8_t *)calloc(fmeta->nr_src_bytes, sizeof(uint8_t));
-    assert(obuf);
-    cudaMemcpy(obuf, dev_obuf, sizeof(uint8_t) * fmeta->nr_src_bytes,
-               cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();
+        cudaFree(dev_ibuf);
+        cudaFree(dev_tab);
 
-    for (uint64_t i = 0; i < fmeta->nr_src_bytes; i++) {
-        fwrite(&obuf[i], sizeof(uint8_t), 1, ofile);
+        /* Copy the device output file buffer to host. */
+        obuf = (uint8_t *)calloc(fmeta->nr_src_bytes, sizeof(uint8_t));
+        assert(obuf);
+        cudaMemcpy(obuf, dev_obuf, sizeof(uint8_t) * fmeta->nr_src_bytes,
+                   cudaMemcpyDeviceToHost);
+        cudaDeviceSynchronize();
+
+        for (uint64_t i = 0; i < fmeta->nr_src_bytes; i++) {
+            fwrite(&obuf[i], sizeof(uint8_t), 1, ofile);
+        }
+
+        *nr_rd_bytes = fmeta->nr_enc_bytes;
+        *nr_wr_bytes = fmeta->nr_src_bytes;
+
+        free(obuf);
+        cudaFree(dev_obuf);
     }
-
-    *nr_rd_bytes = fmeta->nr_enc_bytes;
-    *nr_wr_bytes = fmeta->nr_src_bytes;
-
-    free(obuf);
-    cudaFree(dev_obuf);
 
     printf("decode: %0.3fms {p1: %0.3fms, p2: %0.3fms, p3: %0.3fms}\n",
            p1 + p2 + p3, p1, p2, p3);
