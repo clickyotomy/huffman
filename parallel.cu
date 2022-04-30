@@ -21,7 +21,7 @@
 #define UNIT_SIZE 8
 #define SUBSEQ_LENGTH 4096
 #define THREADS_PER_BLOCK 128
-#define SUBSEQ_CONV 32
+#define SUBSEQ_CONV 64
 
 __device__ bool dev_blocks_synchronized;
 
@@ -113,10 +113,11 @@ __device__ void decode_subsequence(struct lookup *tab, uint32_t tab_sz,
     /* start decoding from the start of the subsequence */
     uint64_t offset = subseq_start;
     uint64_t subseq_end = offset + SUBSEQ_LENGTH;
-    subseq_end = subseq_end < total_nr_bits ? subseq_end : total_nr_bits;
-    uint64_t prev_off = offset;
+    uint64_t prev_off = 0;
     uint64_t num_symbols = 0, num_bits = 0;
     uint8_t c;
+
+    subseq_end = subseq_end < total_nr_bits ? subseq_end : total_nr_bits;
 
     while (offset < subseq_end) {
         num_bits =
@@ -148,7 +149,7 @@ decode_subsequence_write(struct lookup *tab, uint32_t tab_sz,
     uint64_t offset = subseq_start;
     uint64_t subseq_end = offset + SUBSEQ_LENGTH;
     subseq_end = subseq_end < total_nr_bits ? subseq_end : total_nr_bits;
-    uint64_t prev_off = offset;
+    uint64_t prev_off = 0;
     uint64_t num_symbols = 0, num_bits = 0;
     uint8_t c;
     uint64_t out_pos = 0;
@@ -442,7 +443,7 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
     cudaEventCreate(&stop);
 
     total_nr_bits = (fmeta->nr_enc_bytes * UNIT_SIZE);
-    num_subseq = UPDIV(total_nr_bits, (SUBSEQ_LENGTH * UNIT_SIZE));
+    num_subseq = UPDIV(total_nr_bits, SUBSEQ_LENGTH);
     num_sequences = UPDIV(num_subseq, THREADS_PER_BLOCK);
 
     /* Standard asserts. */
@@ -520,7 +521,7 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
 
         blocks_synchronized = (bool *)calloc(1, sizeof(bool));
         *blocks_synchronized = false;
-        while (!*blocks_synchronized && conv < SUBSEQ_CONV) {
+        while (!*blocks_synchronized && conv < 64) {
             phase2_synchronise_blocks<<<num_sequences, THREADS_PER_BLOCK>>>(
                 total_nr_bits, num_subseq, num_sequences, dev_ibuf, dev_tab,
                 tab_sz, dev_sync_points, dev_sequences_sync);
