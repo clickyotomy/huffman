@@ -331,6 +331,7 @@ void decode(int16_t dev, int16_t with_tree, FILE *ifile, struct meta *fmeta,
     tab = make_lookup_table(root, &tab_sz);
     assert(tab);
     assert(tab_sz > 0 && tab_sz <= MAX_LOOKUP_TAB_LEN);
+    // print_huffman_table(tab, tab_sz);
 
     if (dev)
         dev_trampoline(ifile, fmeta, tab, tab_sz, ofile, nr_rd_bytes,
@@ -350,6 +351,8 @@ int main(int argc, char *argv[]) {
     int16_t arg, enc = 1, dev = 1, with_tree = 0;
     char *ifpath = NULL, *ofpath = NULL;
     FILE *ifile = NULL, *ofile = NULL;
+    clock_t dec_st, dec_en;
+    double dec_el;
 
     struct node *head = NULL;
     struct map *fmap = NULL;
@@ -457,9 +460,16 @@ int main(int argc, char *argv[]) {
         head = decode_tree(tbuf, fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
         assert(head);
 
+        dec_st = clock();
         /* Decode the file and write to the output file. */
         decode(dev, with_tree, ifile, &fmeta, head, ofile, &nr_rbytes,
                &nr_wbytes);
+
+        dec_en = clock() - dec_st;
+        dec_el = (double)dec_en / CLOCKS_PER_SEC;
+
+        if (!dev)
+            printf("decode: %0.3fms\n", dec_el * 1000);
 
         /* Check if the decode was successful. */
         assert(fmeta.nr_enc_bytes == nr_rbytes);

@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 /* Maximum size of the histogram table. */
 #define MAX_HIST_TAB_LEN (0x1U << 8)
@@ -20,6 +21,7 @@
 #define MAX_INT_BUF_BITS (0x8U)
 
 #define MAX_LOOKUP_TAB_LEN (0x1LU << 24)
+
 /*
  * Intermediate nodes in the tree are populated with
  * this byte to distinguish them from leaf nodes.
