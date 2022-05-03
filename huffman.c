@@ -332,7 +332,6 @@ void decode(int16_t dev, int16_t with_tree, int16_t st, FILE *ifile,
     tab = make_lookup_table(root, &tab_sz);
     assert(tab);
     assert(tab_sz > 0 && tab_sz <= MAX_LOOKUP_TAB_LEN);
-    // print_huffman_table(tab, tab_sz);
 
     if (dev)
         dev_trampoline(ifile, fmeta, tab, tab_sz, ofile, nr_rd_bytes,
