@@ -5,12 +5,13 @@
 void prog_usage(const char *prog) {
     printf("huffman: A simple text-based Huffman {en,de}coder.\n\n"
            "USAGE\n"
-           "  %s (-e | -d [-t -n]) -i INPUT -o OUTPUT [-h]\n\n"
+           "  %s (-e | -d [-t -n -s]) -i INPUT -o OUTPUT [-h]\n\n"
            "ARGUMENTS\n"
            "  -e  encode (default operation)\n"
            "  -d  decode\n"
            "  -t  use tree instead of look-up table (host only; for decode)\n"
            "  -n  run on host instead of GPU (for decode)\n"
+           "  -s  run on a single GPU thread\n"
            "  -i  input file path\n"
            "  -o  output file path\n"
            "  -h  display program usage\n",
@@ -312,9 +313,9 @@ ret:
 }
 
 /* Wrapper for decoding. */
-void decode(int16_t dev, int16_t with_tree, FILE *ifile, struct meta *fmeta,
-            struct node *root, FILE *ofile, uint64_t *nr_rd_bytes,
-            uint64_t *nr_wr_bytes) {
+void decode(int16_t dev, int16_t with_tree, int16_t st, FILE *ifile,
+            struct meta *fmeta, struct node *root, FILE *ofile,
+            uint64_t *nr_rd_bytes, uint64_t *nr_wr_bytes) {
 
     struct lookup *tab = NULL;
     uint32_t tab_sz;
@@ -335,7 +336,7 @@ void decode(int16_t dev, int16_t with_tree, FILE *ifile, struct meta *fmeta,
 
     if (dev)
         dev_trampoline(ifile, fmeta, tab, tab_sz, ofile, nr_rd_bytes,
-                       nr_wr_bytes);
+                       nr_wr_bytes, st);
     else
         decode_with_tab(ifile, fmeta->nr_enc_bytes, tab, tab_sz, ofile,
                         nr_rd_bytes, nr_wr_bytes);
@@ -348,17 +349,17 @@ int main(int argc, char *argv[]) {
     uint8_t *tbuf = NULL;
     uint32_t map_sz;
     uint64_t nr_rbytes = 0, nr_wbytes = 0;
-    int16_t arg, enc = 1, dev = 1, with_tree = 0;
+    int16_t arg, enc = 1, dev = 0, with_tree = 0, st = 1;
     char *ifpath = NULL, *ofpath = NULL;
     FILE *ifile = NULL, *ofile = NULL;
-    clock_t dec_st, dec_en;
+    struct timespec dec_st, dec_en;
     double dec_el;
 
     struct node *head = NULL;
     struct map *fmap = NULL;
     struct meta fmeta = {0, 0, 0, 0};
 
-    while ((arg = getopt(argc, argv, "edtni:o:h?")) > 0) {
+    while ((arg = getopt(argc, argv, "edtnsi:o:h?")) > 0) {
         switch (arg) {
         case 'e':
             enc = 1;
@@ -371,6 +372,9 @@ int main(int argc, char *argv[]) {
             break;
         case 'n':
             dev = 0;
+            break;
+        case 's':
+            st = 1;
             break;
         case 'i':
             ifpath = optarg;
@@ -460,16 +464,16 @@ int main(int argc, char *argv[]) {
         head = decode_tree(tbuf, fmeta.nr_tree_bytes, fmeta.tree_lb_sh_pos);
         assert(head);
 
-        dec_st = clock();
         /* Decode the file and write to the output file. */
-        decode(dev, with_tree, ifile, &fmeta, head, ofile, &nr_rbytes,
+        timespec_get(&dec_st, TIME_UTC);
+        decode(dev, with_tree, st, ifile, &fmeta, head, ofile, &nr_rbytes,
                &nr_wbytes);
 
-        dec_en = clock() - dec_st;
-        dec_el = (double)dec_en / CLOCKS_PER_SEC;
+        timespec_get(&dec_en, TIME_UTC);
+        dec_el = ((double)(dec_en.tv_nsec - dec_st.tv_nsec)) / CONV_FACT_NS_MS;
 
         if (!dev)
-            printf("decode: %0.3fms\n", dec_el * 1000);
+            printf("decode: %0.3fms\n", dec_el);
 
         /* Check if the decode was successful. */
         assert(fmeta.nr_enc_bytes == nr_rbytes);

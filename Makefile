@@ -17,10 +17,10 @@ PERF_STAT   = $(shell which perf) stat $(PERF_ARGS)
 RAND_QMIN   = 0    # 0 bytes.
 RAND_QMAX   = 128  # 128 bytes.
 RAND_QAWK   = BEGIN{ srand(); print int(rand()*($(RAND_QMAX)-$(RAND_QMIN))+$(RAND_QMIN)) }
-RAND_FMIN  ?= 1024       # 1 kB.
+RAND_FMIN   ?= 1024       # 1 kB.
 RAND_FMAX   ?= 536346624  # 512 MB.
-# RAND_FMAX  ?= 4294967296 # 4 * 1024 * 1024 * 1024 bytes (~4GB).
 RAND_FAWK   = BEGIN{ srand(); print int(rand()*($(RAND_FMAX)-$(RAND_FMIN))+$(RAND_FMIN)) }
+DATA_DIR    ?= ../data/
 
 default: $(PROG_NAME)
 
@@ -47,6 +47,24 @@ test: default
 test-mars: default
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i test/mars.jpg -o mars.enc
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i mars.enc -o mars.dec
+
+
+test-real: default
+	# Disable "enwiki" because of disk-space constraints.
+	# LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i $(DATA_DIR)/enwiki9 -o enwiki9.enc
+	# LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i enwiki9.enc -o enwiki9.dec
+
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i $(DATA_DIR)/mozilla.tar -o mozilla.enc
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i mozilla.enc -o mozilla.dec
+
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i $(DATA_DIR)/xml.tar -o xml.enc
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i xml.enc -o xml.dec
+
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i $(DATA_DIR)/webster -o webster.enc
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i webster.enc -o webster.dec
+
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i $(DATA_DIR)/dickens -o dickens.enc	
+	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i dickens.enc -o dickens.dec
 
 
 test-qrand: default
@@ -81,5 +99,5 @@ clean:
 	/bin/rm -rf *~ *.o $(PROG_NAME) *.enc *.dec *.pdec rand.*
 
 
-.PHONY: default format test test-qrand test-frand test-perf mem-chk clean
+.PHONY: default format test test-mars test-real test-qrand test-frand test-perf mem-chk clean
 

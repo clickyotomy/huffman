@@ -20,8 +20,11 @@
 /* Maximum size of a encoded (or decoded) byte. */
 #define MAX_INT_BUF_BITS (0x8U)
 
+/* Maximum size of the Huffman look-up table. */
 #define MAX_LOOKUP_TAB_LEN (0x1LU << 24)
 
+/* Conversion factor for nano-to-milli seconds. */
+#define CONV_FACT_NS_MS 1000000
 /*
  * Intermediate nodes in the tree are populated with
  * this byte to distinguish them from leaf nodes.
@@ -92,8 +95,8 @@ struct map *make_map(FILE *, uint32_t *);
 
 /* Routines for encoding and decoding. */
 void encode(FILE *, struct node *, FILE *, uint64_t *, uint64_t *);
-void decode(int16_t, int16_t, FILE *, struct meta *, struct node *, FILE *,
-            uint64_t *, uint64_t *);
+void decode(int16_t, int16_t, int16_t, FILE *, struct meta *, struct node *,
+            FILE *, uint64_t *, uint64_t *);
 void decode_with_tree(FILE *, uint64_t, struct node *, FILE *, uint64_t *,
                       uint64_t *);
 void decode_with_tab(FILE *, uint64_t, struct lookup *, uint32_t, FILE *,
