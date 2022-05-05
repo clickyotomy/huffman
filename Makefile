@@ -3,12 +3,12 @@ export LD_LIBRARY_PATH := /usr/local/depot/cuda-10.2/lib64/
 SHELL       = /bin/bash
 PROG_NAME   = huffman
 CC          = $(shell which clang)
-CPP         = $(shell which clang++)
-CFLAGS      = -m64 -Wall -Werror -Wextra -ggdb -O3
+CXX         = $(shell which clang++)
+CFLAGS      = -m64 -Wall -Werror -Wextra -pedantic -ggdb -O3 -std=c11
 OBJS        = $(PROG_NAME).o tree.o map.o queue.o parallel.o
 LDFLAGS     = -L$(LD_LIBRARY_PATH) -lcudart
 NVCC        = nvcc
-NVCCFLAGS   = -m64 -O3 --gpu-architecture compute_61 -ccbin $(CPP)
+NVCCFLAGS   = -m64 -O3 --gpu-architecture compute_61 -ccbin $(CXX)
 FMT         = $(shell which clang-format) -style='{IndentWidth: 4, TabWidth: 4}' -i
 VALGRIND    = valgrind --leak-check=full --show-leak-kinds=all
 PERF_EVENTS = 'cache-references,cache-misses,cycles,instructions,branches,faults,migrations'
@@ -26,7 +26,7 @@ default: $(PROG_NAME)
 
 
 $(PROG_NAME): $(OBJS)
-	$(CPP) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)
+	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)
 
 %.o: %.cu
 	PATH=$(PATH) $(NVCC) $(NVCCFLAGS) $(LDFLAGS) $< -c -o $@
@@ -43,10 +43,14 @@ test: default
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i test/shakespeare.txt -o shakespeare.enc
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i shakespeare.enc -o shakespeare.dec
 
+	diff test/shakespeare.txt shakespeare.dec
+
 
 test-mars: default
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i test/mars.jpg -o mars.enc
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i mars.enc -o mars.dec
+
+	diff test/mars.jpg mars.dec
 
 
 test-real: default
@@ -74,6 +78,8 @@ test-qrand: default
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i rand.txt -o rand.enc
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i rand.enc -o rand.dec
 
+	diff rand.txt rand.dec
+
 
 test-frand: default
 	$(eval RAND_INT=$(shell awk '$(RAND_FAWK)'))
@@ -81,6 +87,8 @@ test-frand: default
 
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -e -i rand.txt -o rand.enc
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./$(PROG_NAME) -d -i rand.enc -o rand.dec
+
+	diff rand.txt rand.dec
 
 
 test-perf: default

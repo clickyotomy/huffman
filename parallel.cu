@@ -21,7 +21,6 @@
 #define UNIT_SIZE 8
 #define SUBSEQ_LENGTH 512
 #define THREADS_PER_BLOCK 32
-#define SUBSEQ_CONV 64
 
 __device__ bool dev_blocks_synchronized;
 
@@ -456,7 +455,7 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
 
     uint8_t *ibuf = NULL, *obuf = NULL, *dev_ibuf = NULL, *dev_obuf = NULL;
     uint64_t total_nr_bits, *dev_nr_rd_bytes, *dev_nr_wr_bytes;
-    size_t num_subseq, num_sequences, conv = 0;
+    size_t num_subseq, num_sequences;
     struct lookup *dev_tab;
     struct sync_point *dev_sync_points;
     bool *blocks_synchronized, *dev_sequences_sync;
@@ -566,7 +565,7 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
 
         blocks_synchronized = (bool *)calloc(1, sizeof(bool));
         *blocks_synchronized = false;
-        while (!*blocks_synchronized && conv < 64) {
+        while (!*blocks_synchronized) {
             phase2_synchronise_blocks<<<num_sequences, THREADS_PER_BLOCK>>>(
                 total_nr_bits, num_subseq, num_sequences, dev_ibuf, dev_tab,
                 tab_sz, dev_sync_points, dev_sequences_sync);
@@ -577,7 +576,6 @@ extern "C" void dev_trampoline(FILE *ifile, struct meta *fmeta,
 
             cudaMemcpyFromSymbol(blocks_synchronized, dev_blocks_synchronized,
                                  sizeof(bool), 0, cudaMemcpyDeviceToHost);
-            conv++;
         }
 
         cudaError_t error = cudaGetLastError();

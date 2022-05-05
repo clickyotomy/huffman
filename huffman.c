@@ -416,12 +416,12 @@ int main(int argc, char *argv[]) {
 
         /*
          *
-         *  +---------+-------------------- >  < +-------------------- >  < -+
-         *  |  HEADER | TREE [0, 1, ... N]  >  < | ENC [0, 1, ..., B]  >  <  |
-         *  +---------+-------------------- >  < +-------------------- >  < -+
+         *  +--------+-------------------- >  < +-------------------- >  < -+
+         *  | HEADER | TREE [0, 1, ... N]  >  < | ENC [0, 1, ..., B]  >  <  |
+         *  +--------+-------------------- >  < +-------------------- >  < -+
          *
-         *  - HEADER    File header containing the "map" struct.
-         *  - TREE[]    Encoded Huffman tree.
+         *  - HEADER    File header containing the "meta" struct.
+         *  - TREE[]    Encoded Huffman tree (deflated).
          *  - ENC[]     Encoded bytes.
          */
 
